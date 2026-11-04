@@ -33,6 +33,20 @@ contract LiquidationShield is IFlashLoanSimpleReceiver, Ownable2Step, Pausable, 
         bool unwinding;
     }
 
+    /// @notice What `protect` would do now. `ClearUnwind` ends a stale Unwind after the price recovered.
+    enum Action {
+        None,
+        Step,
+        ClearUnwind
+    }
+
+    struct Preview {
+        Action action;
+        uint256 healthFactor; // WAD
+        uint256 repayAmount; // debt units; 0 unless action == Step
+        uint256 estCollateralSold; // collateral units; upper bound at the user's slippage cap
+    }
+
     uint64 internal constant MIN_TRIGGER_HF = 1.02e18;
     uint64 internal constant MAX_TARGET_HF = 3e18;
     uint64 internal constant MIN_TARGET_GAP = 0.05e18;
@@ -42,6 +56,8 @@ contract LiquidationShield is IFlashLoanSimpleReceiver, Ownable2Step, Pausable, 
     uint16 internal constant MAX_SLIPPAGE_BPS = 500;
     uint16 internal constant MAX_KEEPER_FEE_BPS = 50;
     uint256 internal constant VARIABLE_RATE = 2;
+    /// @dev An Unwind is done once HF ≥ target · 99.5%.
+    uint256 internal constant UNWIND_BAND_BPS = 9950;
 
     IPoolAddressesProvider public immutable ADDRESSES_PROVIDER;
     IPool public immutable POOL;
@@ -67,6 +83,7 @@ contract LiquidationShield is IFlashLoanSimpleReceiver, Ownable2Step, Pausable, 
         uint16 maxSlippageBps
     );
     event Unregistered(address indexed user);
+    event UnwindComplete(address indexed user);
     event Protected(
         address indexed user,
         address indexed keeper,
@@ -143,12 +160,20 @@ contract LiquidationShield is IFlashLoanSimpleReceiver, Ownable2Step, Pausable, 
 
     /// @notice Run one Step for `user`: flash-borrow the debt asset, repay, sell just enough collateral, repay
     ///         the flash loan. Permissionless; the caller earns the keeper fee.
-    /// @return hfAfter The user's HF after the Step.
+    ///         Allowed below the trigger, or mid-Unwind below target·0.995. Mid-Unwind at or above that band it
+    ///         only clears the flag (ClearUnwind: no Step, no fee), so a later dip above the trigger can't Step.
+    /// @return hfAfter The user's HF after the call.
     function protect(address user) external nonReentrant whenNotPaused returns (uint256 hfAfter) {
         Config memory c = _configs[user];
         if (!c.active) revert NotRegistered();
         (,,,,, uint256 hfBefore) = POOL.getUserAccountData(user);
-        if (hfBefore >= c.triggerHF) revert NotProtectable(hfBefore, c.triggerHF);
+        Action action = _action(c, hfBefore);
+        if (action == Action.ClearUnwind) {
+            _configs[user].unwinding = false;
+            emit UnwindComplete(user);
+            return hfBefore;
+        }
+        if (action == Action.None) revert NotProtectable(hfBefore, c.triggerHF);
 
         uint256 amount = _repayAmount(c, user);
         if (amount == 0) revert NothingToRepay();
@@ -159,7 +184,28 @@ contract LiquidationShield is IFlashLoanSimpleReceiver, Ownable2Step, Pausable, 
 
         (,,,,, hfAfter) = POOL.getUserAccountData(user);
         if (hfAfter <= hfBefore) revert HealthFactorNotImproved(hfBefore, hfAfter);
+        bool unwinding = hfAfter < _band(c);
+        _configs[user].unwinding = unwinding;
         emit Protected(user, msg.sender, hfBefore, hfAfter, _lastRepaid, _lastCollateralSold, _lastKeeperFee);
+        if (c.unwinding && !unwinding) emit UnwindComplete(user);
+    }
+
+    /// @notice What `protect(user)` would do right now. The keeper calls `protect` when `action != None`.
+    function previewProtect(address user) external view returns (Preview memory p) {
+        Config memory c = _configs[user];
+        (,,,,, p.healthFactor) = POOL.getUserAccountData(user);
+        if (paused()) return p;
+        p.action = _action(c, p.healthFactor);
+        if (p.action != Action.Step) return p;
+
+        p.repayAmount = _repayAmount(c, user);
+        if (p.repayAmount == 0) {
+            p.action = Action.None;
+            return p;
+        }
+        uint256 premium = Math.mulDiv(p.repayAmount, POOL.FLASHLOAN_PREMIUM_TOTAL(), 1e4, Math.Rounding.Ceil);
+        uint256 needed = p.repayAmount + premium + p.repayAmount * keeperFeeBps / 1e4;
+        p.estCollateralSold = Math.min(_maxCollateralIn(c, needed), _availableCollateral(c, user));
     }
 
     /// @notice Aave flash-loan callback. Only accepts the loan `protect` itself started.
@@ -241,6 +287,18 @@ contract LiquidationShield is IFlashLoanSimpleReceiver, Ownable2Step, Pausable, 
     }
 
     // ---------------------------------------------------------------- Step internals
+
+    /// @dev The Unwind state machine. Inactive → None. Mid-Unwind → Step below the band, else ClearUnwind.
+    ///      Otherwise → Step below the trigger, else None.
+    function _action(Config memory c, uint256 hf) internal pure returns (Action) {
+        if (!c.active) return Action.None;
+        if (c.unwinding) return hf < _band(c) ? Action.Step : Action.ClearUnwind;
+        return hf < c.triggerHF ? Action.Step : Action.None;
+    }
+
+    function _band(Config memory c) internal pure returns (uint256) {
+        return uint256(c.targetHF) * UNWIND_BAND_BPS / 1e4;
+    }
 
     /// @dev Flash amount in debt units: closed-form size, clamped to the step cap, the variable debt, and what the
     ///      user's collateral balance and allowance can cover.
