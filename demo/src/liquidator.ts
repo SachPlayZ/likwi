@@ -23,6 +23,7 @@ export async function runLiquidator(ctx: Context): Promise<() => void> {
   let busy = false;
   return ctx.client.watchBlockNumber({
     emitMissed: false,
+    pollingInterval: 400, // ~every other block; the public RPC rate-limits bursts
     onError: (e) => console.error("block watch error:", e.message),
     onBlockNumber: async () => {
       if (busy) return; // one liquidation in flight at a time

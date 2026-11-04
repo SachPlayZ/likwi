@@ -1,6 +1,7 @@
 // Env, clients and transaction confirmation for the demo scripts (BRIEF §9, §17).
 // Keys are testnet-only and come from the root `.env` (never committed).
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
   createPublicClient,
@@ -27,11 +28,16 @@ export type Context = {
   client: PublicClient<Transport, Chain>;
   operator: Wallet;
   walletFor: (account: Account) => Wallet;
+  /** Called for every confirmed tx (the web operator routes feed their event ticker with it). */
+  onTx?: (tx: { label: string; hash: Hex; block: bigint }) => void;
 };
 
-const DEPLOYMENTS_PATH = fileURLToPath(new URL("../.deployments.json", import.meta.url));
-export const WEB_ENV_PATH = fileURLToPath(new URL("../../web/.env.local", import.meta.url));
-export const KEEPER_ENV_PATH = fileURLToPath(new URL("../../keeper/.env", import.meta.url));
+// Repo root: REPO_ROOT (set by the web server) or relative to this file. No `new URL(literal, import.meta.url)`,
+// which bundlers would copy as a static asset.
+const ROOT = process.env.REPO_ROOT ?? resolve(dirname(fileURLToPath(import.meta.url)), "../..");
+const DEPLOYMENTS_PATH = resolve(ROOT, "demo/.deployments.json");
+export const WEB_ENV_PATH = resolve(ROOT, "web/.env.local");
+export const KEEPER_ENV_PATH = resolve(ROOT, "keeper/.env");
 
 export function env(name: string): string {
   const v = process.env[name];
@@ -53,12 +59,12 @@ export function runAccounts(n: number): { alice: Account; bob: Account } {
 }
 
 /** Clients for Monad testnet. Refuses to run against any other chain id. */
-export async function connect(): Promise<Context> {
+export async function connect(onTx?: Context["onTx"]): Promise<Context> {
   const transport = testnetTransport({ rpcUrl: process.env.RPC_URL, wsUrl: process.env.WS_URL });
   const client = createPublicClient({ chain: testnetChain, transport, pollingInterval: 200 });
   await assertTestnet(client);
   const walletFor = (a: Account) => createWalletClient({ account: a, chain: testnetChain, transport });
-  return { client, operator: walletFor(account("OPERATOR_PRIVATE_KEY")), walletFor };
+  return { client, operator: walletFor(account("OPERATOR_PRIVATE_KEY")), walletFor, onTx };
 }
 
 /** Waits for `hash`, throws if it reverted, and prints the label with its explorer link. */
@@ -67,6 +73,7 @@ export async function confirm(ctx: Context, label: string, hash: Promise<Hex> | 
   const receipt = await ctx.client.waitForTransactionReceipt({ hash: h });
   if (receipt.status !== "success") throw new Error(`${label} reverted: ${explorerTxUrl(h)}`);
   console.log(`✓ ${label.padEnd(34)} ${explorerTxUrl(h)}`);
+  ctx.onTx?.({ label, hash: h, block: receipt.blockNumber });
   return h;
 }
 

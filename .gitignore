@@ -16,3 +16,4 @@ web/next-env.d.ts
 !.env.example
 web/.env.local
 demo/.deployments.json
+*.tsbuildinfo

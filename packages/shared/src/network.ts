@@ -15,10 +15,12 @@ export const explorerAddressUrl = (address: string) => `${EXPLORER}/address/${ad
  * `rpcUrl` may also point at a local chain started with `--chain-id 10143` for dry runs.
  */
 export function testnetTransport(opts: { rpcUrl?: string; wsUrl?: string }): Transport {
+  // The public RPC answers bursts with 429; viem retries those, with backoff 300ms·2^n (~19s over 6 tries).
+  const retry = { retryCount: 6, retryDelay: 300 };
   const transports: Transport[] = [];
   if (opts.wsUrl) transports.push(webSocket(opts.wsUrl));
-  if (opts.rpcUrl) transports.push(http(opts.rpcUrl));
-  if (!opts.rpcUrl) transports.push(http(testnetChain.rpcUrls.default.http[0]));
+  if (opts.rpcUrl) transports.push(http(opts.rpcUrl, retry));
+  if (!opts.rpcUrl) transports.push(http(testnetChain.rpcUrls.default.http[0], retry));
   return transports.length === 1 ? transports[0]! : fallback(transports);
 }
 
