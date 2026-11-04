@@ -53,6 +53,8 @@ Check `package.json` before relying on them, and update this section when they c
 - `forge build` / `forge test` (in `contracts/`), or `npm run test:contracts` from the root
 - `npm run abis`: `forge build`, then regenerate typed ABIs into `packages/shared/src/generated.ts` (committed; rerun after any contract interface change). Add new contracts to the list in `packages/shared/scripts/gen-abis.mjs`.
 - `npm run typecheck`: type-check every workspace
+- `npm run keeper`: run the keeper (env in `keeper/.env`, see `keeper/.env.example`; `DRY_RUN=true` simulates only). `GET :8787/health` and `/status`.
+- `npm run test:keeper`: keeper vitest suite (tick behaviour with stubbed viem clients)
 - Planned (#15): demo day order: `npm run demo:deploy` (once, beforehand) → `npm run demo:seed` → `npm run keeper` → `npm run demo:liquidator` → `npm run web`, then open `/demo`
 
 ## Agent skills
