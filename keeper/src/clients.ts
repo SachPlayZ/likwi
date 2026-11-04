@@ -40,6 +40,15 @@ export function createKeeperPublicClient(transport: Transport, chain: ChainName)
   return createPublicClient({ chain: CHAINS[chain], transport, pollingInterval: 200 }) as KeeperPublicClient;
 }
 
+/** Throws unless the RPC really serves the chain `CHAIN` names, so the keeper never signs for the wrong chain. */
+export async function assertChain(client: { getChainId: () => Promise<number> }, chain: ChainName): Promise<void> {
+  const expected = CHAINS[chain];
+  const id = await client.getChainId();
+  if (id !== expected.id) {
+    throw new Error(`Refusing to run: RPC is chain ${id}, expected ${expected.name} (${expected.id}).`);
+  }
+}
+
 /** The keeper key gets viem's nonce manager, so back-to-back txs don't collide. */
 export function createKeeperWalletClient(transport: Transport, chain: ChainName, privateKey: Hex): KeeperWalletClient {
   const account = privateKeyToAccount(privateKey, { nonceManager });
