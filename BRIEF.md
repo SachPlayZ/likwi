@@ -52,7 +52,7 @@ Pitch line: _"If you borrow against crypto and the price drops, the protocol sel
   - See live status: HF chart, "Shield active" heartbeat, and a log of each protection step.
   - Turn it off at any time: unregister and/or revoke the approval.
 - **Keeper operator:** runs the bot with a funded key, earns keeper fees, and monitors `/health`.
-- **Demo presenter (hackathon):** runs a local Monad fork. One click crashes the price. Two identical loans: the unprotected one gets liquidated and the shielded one survives. A big "$ saved" number.
+- **Demo presenter (hackathon):** runs the demo on **Monad testnet** (chain 10143), so every action is a real, explorer-visible transaction. One click crashes the price. Two identical loans: the unprotected one gets liquidated and the shielded one survives. A big "$ saved" number.
 
 ## 5. Decisions already made (final, don't re-litigate)
 
@@ -64,7 +64,7 @@ Pitch line: _"If you borrow against crypto and the price drops, the protocol sel
 6. **Gradual unwind:** each step repays at most `maxStepBps` of the debt. Steps continue on later blocks until HF ≥ 99.5% of target.
 7. **Repay sizing:** use the closed-form formula in §6.3.
 8. **Swap venue:** `UniswapV3SwapAdapter` (SwapRouter02 `exactOutput`, owner-set paths) in production. `OracleSwapAdapter` (inventory filled at the Aave oracle price + fee) **only on forks and testnets.** Reason: after the demo fakes an oracle crash, real AMM pools on the fork still show the old price, which would make swap numbers meaningless.
-9. **Demo environment:** an **anvil fork of Monad mainnet** with chain id **31430**, so wallets never confuse it with mainnet. The price crash is done by etching a `DemoPriceFeed` over Aave's WETH price source and writing slot 0.
+9. **Demo environment:** ~~an anvil fork of Monad mainnet (chain 31430)~~ **Superseded by §17: Monad testnet (chain 10143)**, using our own Aave V3-compatible test pool with an owner-controlled oracle, because Aave isn't deployed on testnet.
 10. **Stack:** Foundry (solc **0.8.28**, `evm_version = "prague"`), OpenZeppelin v5. TypeScript + **viem** for the keeper and demo scripts. **Next.js (App Router) + wagmi + viem + TanStack Query + Recharts** for the web app. npm workspaces monorepo.
 11. **No token, no backend database.** The registry of users comes from on-chain events.
 
@@ -79,14 +79,14 @@ src/
   interfaces/ISwapAdapter.sol     // swapExactOutput(tokenIn, tokenOut, amountOut, maxAmountIn, recipient) -> amountIn
   adapters/UniswapV3SwapAdapter.sol
   adapters/OracleSwapAdapter.sol  // FORKS/TESTNETS ONLY
-  demo/DemoPriceFeed.sol          // FORKS ONLY: int256 latestAnswer in slot 0, decimals 8, latestRoundData
+  testnet/TestnetAave.sol         // TESTNET ONLY: Aave V3-compatible pool + oracle + tokens; owner-only price/mint (§17)
 script/
   MonadAddresses.sol              // constants, see §10
   Deploy.s.sol                    // env-driven, writes deployments/<chainId>.json
 test/
   mocks/MockAave.sol              // faithful-enough Aave model for unit tests
   LiquidationShield.t.sol         // unit + fuzz
-  fork/ShieldFork.t.sol           // real Aave on a Monad fork; skipped if MONAD_RPC_URL unset
+  fork/ShieldFork.t.sol           // [STRETCH] real Aave on a Monad mainnet fork; skipped if MONAD_RPC_URL unset
 ```
 
 ### 6.2 `LiquidationShield` public interface
@@ -199,48 +199,50 @@ Fork tests (`MONAD_RPC_URL` set; otherwise early-return): real Aave, `deal` WETH
 - `log.ts`: one-line JSON logger.
 - Graceful shutdown on SIGINT/SIGTERM.
 
-**Env:** `RPC_URL`, `WS_URL?`, `CHAIN=monad|fork`, `KEEPER_PRIVATE_KEY`, `SHIELD_ADDRESS`, `DEPLOY_BLOCK`, `HEARTBEAT_EVERY_BLOCKS=10`, `LOG_CHUNK=1000`, `CONCURRENCY=16`, `STATUS_PORT=8787`, `USERS?`, `DRY_RUN=false`.
+**Env:** `RPC_URL`, `WS_URL?`, `CHAIN=monad|testnet`, `KEEPER_PRIVATE_KEY`, `SHIELD_ADDRESS`, `DEPLOY_BLOCK`, `HEARTBEAT_EVERY_BLOCKS=10`, `LOG_CHUNK=1000`, `CONCURRENCY=16`, `STATUS_PORT=8787`, `USERS?`, `DRY_RUN=false`. Prefer a provider WebSocket RPC (e.g. Alchemy Monad testnet), and fall back to the public RPC, which is rate-limited.
 
-**Rewind handling:** if the block number goes backwards (`anvil_revert`), reset the nonce manager, in-flight map and registry cursor. **Flag clears:** when `previewProtect` returns `ClearUnwind`, send `protect` (no fee earned).
+**Flag clears:** when `previewProtect` returns `ClearUnwind`, send `protect` (no fee earned).
 
-**Tests:** for pure logic, use vitest with a stubbed public client (tick overlap guard, one in-flight tx per user, heartbeat cadence, registry dedup on Registered → Unregistered → Registered, state reset on block-number rewind, ClearUnwind dispatch). End-to-end runs against anvil in the demo.
+**Tests:** for pure logic, use vitest with a stubbed public client (tick overlap guard, one in-flight tx per user, heartbeat cadence, registry dedup on Registered → Unregistered → Registered, ClearUnwind dispatch, RPC fallback). End-to-end runs against Monad testnet in the demo.
 
 ## 8. Web app (`/web`)
 
 **Design direction:** dark, high-contrast "mission control." Monad purple accent. Big numerals. Must read from across a room on a projector. No generic template look.
 
+**Network:** Monad testnet (chain 10143). A "Testnet · chain 10143" badge is always visible. Test tokens are labelled **tWETH / tUSDC**. Every transaction shown links to the testnet explorer.
+
 **Pages:**
 
-1. **`/` (product):** connect wallet (injected connector; chains: Monad mainnet + local fork).
+1. **`/` (product):** connect wallet (injected connector; chains: Monad testnet, plus mainnet later).
    - **Position card:** collateral $, debt $, HF gauge with the 1.0 line and the trigger/target markers.
-   - **Shield form:** collateral/debt selects (from the shared asset list), trigger, target, max step %, max slippage %, with inline validation that mirrors the contract bounds. A two-step CTA: _Approve aWETH_ → _Activate Shield_. Unregister and revoke-approval buttons.
-   - **Activity:** `Protected` events for this user (HF before → after, debt repaid, collateral sold, tx link).
-   - **Status badge:** "Shield active · last check 0.4s ago", from the latest `Heartbeat` whose `keeper == NEXT_PUBLIC_KEEPER_ADDRESS` (falling back to the keeper's `/health`). Ignore heartbeats from other addresses.
-   - **Approval:** unlimited aWETH approval, with a prominent revoke button. Default max slippage 1%.
-   - **Fork faucet (chain 31430 only):** "Fund 10 WETH + open sample loan" button (`anvil_setStorageAt` + supply/borrow to HF 1.30).
-2. **`/demo` (the hackathon screen):** wallet-free. Reads via a public client, writes via anvil RPC / test-client calls.
-   - Two cards side by side, **Unprotected** vs **Shielded**. Same starting loan (e.g. 20 WETH collateral at HF 1.30).
+   - **Shield form:** collateral/debt selects (from the shared asset list), trigger, target, max step %, max slippage %, with inline validation that mirrors the contract bounds. A two-step CTA: _Approve atWETH_ → _Activate Shield_. Unregister and revoke-approval buttons.
+   - **Activity:** `Protected` events for this user (HF before → after, debt repaid, collateral sold, explorer link).
+   - **Status badge:** "Shield active · last check 0.3s ago", from the latest `Heartbeat` whose `keeper == NEXT_PUBLIC_KEEPER_ADDRESS` (falling back to the keeper's `/health`). Ignore heartbeats from other addresses.
+   - **Approval:** unlimited atWETH approval, with a prominent revoke button. Default max slippage 1%.
+   - **Testnet faucet:** "Get 10 tWETH + open sample loan" button. It calls the operator server route (below), which mints tWETH to the connected wallet; the user then supplies and borrows to HF 1.30 with their own wallet.
+2. **`/demo` (the hackathon screen):** no wallet. Reads through a public client. Writes go through **operator server routes** (Next.js route handlers) that sign with a testnet-only `OPERATOR_PRIVATE_KEY`, read from server-side env and never exposed to the browser.
+   - Two cards side by side, **Unprotected** (Alice) vs **Shielded** (Bob). Same starting loan (20 tWETH collateral at HF 1.30).
    - A **live HF chart** with both lines, one point per block, a red line at 1.0 and dashed lines at trigger and target.
-   - A **Crash price** control. Primary: **slow crash**, −3% per second for 10 seconds (compounding, about −26%). Secondary: instant −5% / −15% / −25%. It calls anvil RPC directly (`anvil_setStorageAt` on the etched feed). Only enabled on chain 31430.
-   - An event ticker: liquidation (red) and each protection step (green).
+   - A **Crash price** control. Primary: **slow crash**, −3% per second for 10 seconds (compounding, about −26%). Secondary: instant −5% / −15% / −25%. The server route calls the test oracle's owner-only `setAssetPrice`.
+   - An event ticker: liquidation (red), each protection step (green) and price changes, **each linked to the testnet explorer**.
    - **A big "$ saved" number** = Alice's liquidation penalty (bonus seized) − Bob's costs (swap cost + flash premium + keeper fees), at the oracle price. Secondary, smaller stat: the equity-change difference (collateral − debt + wallet balances).
-   - A Reset button: `anvil_revert` to the setup snapshot, then immediately take a new `evm_snapshot` (revert consumes it), and clear the chart.
+   - A **Reset** button. The server route resets the price to $3000, derives a **fresh Alice and Bob** at the next mnemonic index, funds them with MON gas, opens both loans at HF 1.30, registers and approves Bob, then clears the chart. It is idempotent and safe to press repeatedly.
 
-**Data:** read the chain directly with viem/wagmi, refetching on every new block. Configure addresses through `NEXT_PUBLIC_SHIELD_ADDRESS`, `NEXT_PUBLIC_CHAIN`, `NEXT_PUBLIC_KEEPER_URL`, `NEXT_PUBLIC_DEMO_FEED`, `NEXT_PUBLIC_DEMO_ALICE/BOB`, written by `demo:setup`.
+**Data:** read the chain directly with viem/wagmi, refetching on every new block. Configure addresses through `NEXT_PUBLIC_SHIELD_ADDRESS`, `NEXT_PUBLIC_CHAIN`, `NEXT_PUBLIC_KEEPER_URL`, `NEXT_PUBLIC_KEEPER_ADDRESS`, `NEXT_PUBLIC_EXPLORER_URL` and the pool/oracle/token addresses, written by `demo:deploy`. The current Alice and Bob come from the server (`/api/demo/state`).
 
 ## 9. Demo tooling (`/demo`, `/scripts`)
 
-- `scripts/fork.sh`: `anvil --fork-url $MONAD_RPC_URL --chain-id 31430 --block-time 0.4` (anvil 1.5+ accepts fractional seconds, matching Monad) plus `--steps-tracing` off and a generous `--gas-limit`.
-- `demo setup` (TypeScript + viem test client):
-  1. Deploy the Shield with `OracleSwapAdapter`. Fund the adapter with USDC.
-  2. Accounts: anvil #0 = deployer/keeper, #1 = Alice (unprotected), #2 = Bob (shielded), #3 = liquidator.
-  3. **Fund tokens** with `anvil_setStorageAt`: find the `balanceOf` mapping slot by probing slots 0–50 plus OpenZeppelin v5's ERC-7201 ERC20 slot (`0x52c63247…bace00`), checking `balanceOf` after each write.
-  4. Alice and Bob each supply 20 WETH and borrow USDC to HF 1.30. Bob registers (trigger 1.15, target 1.40, step 25%, slippage 1%) and approves aWETH.
-  5. Etch `DemoPriceFeed` runtime bytecode over `AaveOracle.getSourceOfAsset(WETH)`. Write the current price into slot 0.
-  6. Take an `evm_snapshot`. Write `web/.env.local` and `demo/.deployments.json`.
+- **Network:** Monad testnet, chain **10143**, ~0.3s blocks (measured). Public RPC `https://testnet-rpc.monad.xyz` (WS `wss://testnet-rpc.monad.xyz`); faucet `https://faucet.monad.xyz`. Use a provider RPC for the keeper.
+- **Keys:** one `OPERATOR_PRIVATE_KEY` (deployer, pool/oracle owner, MON funder), a `KEEPER_PRIVATE_KEY`, a `LIQUIDATOR_PRIVATE_KEY`, and a `DEMO_MNEMONIC` for Alice/Bob (index 2n = Alice, 2n+1 = Bob for run n). All of them are testnet-only, never committed, and fund the operator from the faucet ahead of demo day.
+- `demo deploy` (TypeScript + viem):
+  1. Deploy `TestnetAave` (pool, oracle, tWETH, tUSDC; WETH $3000, LT 82.5%, 5% bonus, USDC $1, 5 bps flash premium) owned by the operator. Seed pool liquidity.
+  2. Deploy `OracleSwapAdapter` (fee 30 bps) and fund it with tUSDC. Deploy the Shield (keeper fee 10 bps).
+  3. Fund the keeper and liquidator with MON gas, and the liquidator with tUSDC.
+  4. Write `web/.env.local` and `demo/.deployments.json` (addresses + deploy block).
+- `demo seed [--run n]`: what Reset does. Price → $3000; derive Alice/Bob; send MON gas; mint 20 tWETH each; supply + borrow to HF 1.30; Bob registers (trigger 1.15, target 1.40, step 25%, slippage 1%) and approves atWETH; record the current run.
 - `demo crash --pct 15 [--slow]`: the CLI equivalent of the UI button (`--slow` = −3%/s for 10s).
-- `demo liquidator`: a bot that watches Alice and calls `liquidationCall(WETH, USDC, alice, max, false)` once HF < 1. Resets its nonce on block-number rewind. It plays the "real world" for the unprotected side.
-- **Run order on demo day:** `npm run fork` → `npm run demo:setup` → `npm run keeper` → `npm run demo:liquidator` → `npm run web` → open `/demo`.
+- `demo liquidator`: a bot that watches the current Alice and calls `liquidationCall(tWETH, tUSDC, alice, max, false)` once HF < 1. It plays the "real world" for the unprotected side.
+- **Run order on demo day:** `npm run demo:deploy` (once, beforehand) → `npm run demo:seed` → `npm run keeper` → `npm run demo:liquidator` → `npm run web` → open `/demo`.
 
 ## 10. Verified addresses (Monad mainnet, chain id 143)
 
@@ -275,10 +277,10 @@ Each slice is demoable on its own. **Stop wherever time runs out; slice 4 is the
 1. **Foundations:** monorepo (npm workspaces: `contracts`, `packages/shared`, `keeper`, `demo`, `web`), Foundry setup, `MonadAddresses.sol`, interfaces, MockAave, and an ABI codegen script (`forge out` → `packages/shared/src/generated.ts`). _AC:_ `forge build` passes; `npm run abis` writes typed ABIs.
 2. **Core Shield, single step:** register/unregister, `repayBaseForTarget`, `protect` with the flash loan and OracleSwapAdapter. Unit tests 1–4, 8–13, 16–17. _AC:_ all green; the "Shield holds nothing" invariant holds.
 3. **Gradual unwind:** the `unwinding` flag (incl. `ClearUnwind`), the 0.5% target tolerance, `previewProtect`. Tests 5–7, 15. _AC:_ a multi-step unwind lands within 1% of target.
-4. **Fork demo backbone:** `fork.sh`, `demo setup`, `demo crash`, `demo liquidator`, plus a minimal keeper (poll each block → preview → protect). _AC:_ in a terminal, a crash liquidates Alice and Bob unwinds over a few blocks; the logs show both.
+4. **Testnet demo backbone:** `TestnetAave` (promoted from MockAave, owner-gated), `demo deploy`, `demo seed`, `demo crash`, `demo liquidator`, plus a minimal keeper (WS → preview → protect). _AC:_ on Monad testnet, from a terminal, a crash liquidates Alice and Bob unwinds over a few blocks; every transaction is visible on the explorer.
 5. **Demo UI:** the `/demo` page with two cards, live HF chart, crash button, ticker and $ saved. _AC:_ the full 2-minute script in §12 runs from the browser.
 6. **Keeper hardening:** registry backfill, in-flight dedup, overlap guard, heartbeat, `/health` + `/status`, graceful shutdown. _AC:_ the vitest unit tests pass; the UI badge shows the heartbeat.
-7. **Product UI:** the `/` page with position card, Shield form (approve → activate), activity, unregister/revoke. _AC:_ a fresh wallet on the fork can opt in end to end.
+7. **Product UI:** the `/` page with position card, Shield form (approve → activate), activity, unregister/revoke. _AC:_ a fresh wallet on Monad testnet can opt in end to end.
 8. **[STRETCH] Production adapter:** UniswapV3SwapAdapter + tests 14 + `Deploy.s.sol` for mainnet. Check which WETH/USDC pool fee tier on Monad has liquidity, or route through WMON.
 9. **[STRETCH]** auto re-leverage on recovery (with a hysteresis band); a time-to-liquidation trigger (HF slope per block); multi-protocol support (Euler, Morpho, Curvance).
 
@@ -288,7 +290,7 @@ Each slice is demoable on its own. **Stop wherever time runs out; slice 4 is the
 2. Click **Slow crash** (−3%/s). Both HF lines drop. Line: "The Shield acts before HF hits 1."
 3. The left loan crosses 1.0 and the liquidator bot seizes collateral; the penalty shows in red. The right loan steps down over a few blocks (green ticks) and levels off at 1.40.
 4. Point at **"Shield saved $X."**
-5. "Checking every block costs fractions of a cent on Monad. On Ethereum, that would cost a fortune." (The fork runs at Monad's real 0.4s block time.)
+5. "Checking every block costs fractions of a cent on Monad. On Ethereum, that would cost a fortune." (Every transaction you just saw is on Monad testnet. Click any ticker line for the explorer.)
 
 **Q&A answers to keep ready:** if the bot is down, `protect` is permissionless and the heartbeat makes uptime public. The Shield can't steal funds: it acts only below the user's own trigger, only up to their target and slippage, and never holds funds. Even a malicious owner-set swap adapter can take at most `maxSlippageBps` per step, and only below the trigger; `pause` is the owner's other power (it leaves users unprotected). A slow oracle hits liquidators equally; an early trigger and gradual steps give a buffer. Versus DeFi Saver: same idea, but it isn't on Monad, and per-block checking only makes economic sense on a fast, cheap chain.
 
@@ -307,8 +309,8 @@ Audits, a mainnet deployment with real funds, governance or a token, a keeper ne
 
 ## 15. Definition of done (hackathon)
 
-- `forge test` is green, including the fuzz test. The fork tests pass when `MONAD_RPC_URL` is set.
-- One command sequence (§9) brings up the full demo on a laptop.
+- `forge test` is green, including the fuzz test. The fork tests (stretch) pass when `MONAD_RPC_URL` is set.
+- One command sequence (§9) brings up the full demo against Monad testnet from a laptop.
 - `/demo` runs the §12 script with no terminal interaction after start.
 - The README covers the architecture diagram, run steps, the safety model (§5.4–5.5, §6.4, plus owner powers and the MEV bound from §16), and the "why Monad" paragraph.
 
@@ -332,14 +334,29 @@ Settled on 2026-11-04 by grilling §6–§8 and §13. The sections above already
 
 10. **Heartbeats:** the UI only trusts those from `NEXT_PUBLIC_KEEPER_ADDRESS`, because `heartbeat()` is permissionless.
 11. **Flag clears:** the keeper dispatches `ClearUnwind` calls (no fee).
-12. **Rewind:** if the block number goes backwards, the keeper and liquidator reset their nonce manager, in-flight map and registry cursor. This is covered by a vitest case.
+12. **Rewind:** if the block number goes backwards, the keeper and liquidator reset their nonce manager, in-flight map and registry cursor. This is covered by a vitest case. _Superseded by §17: no rewinds on testnet._
 
 **Demo and web**
 
-13. **Block time:** the fork runs at `anvil --block-time 0.4`, Monad's real block time. Verified on anvil 1.5.1.
+13. **Block time:** the fork runs at `anvil --block-time 0.4`, Monad's real block time. Verified on anvil 1.5.1. _Superseded by §17: testnet runs ~0.3s blocks natively._
 14. **Main crash path:** slow crash at −3%/s for 10s (compounding, about −26%). At −2%/s, Alice (HF 1.30) never hits 1.0. Instant crashes are secondary. An instant −25% puts Bob at HF ~0.975, liquidatable in the same block, so the stage line is "Shield acts before HF hits 1."
 15. **"$ saved"** = Alice's liquidation penalty − Bob's costs (swap + premium + keeper fees). The equity difference is a secondary stat, because it also counts market exposure Bob avoided by de-risking early.
-16. **Reset:** `anvil_revert`, then a fresh `evm_snapshot` (a revert consumes the snapshot), then clear the chart.
-17. **`/demo` is wallet-free:** no MetaMask, so no stale-nonce errors after a revert.
-18. **`/` has a fork-only faucet:** "Fund 10 WETH + open sample loan", so slice 7's acceptance criterion is reachable.
+16. **Reset:** `anvil_revert`, then a fresh `evm_snapshot` (a revert consumes the snapshot), then clear the chart. _Superseded by §17: Reset creates fresh accounts._
+17. **`/demo` is wallet-free:** no MetaMask, so no stale-nonce errors after a revert. _Superseded by §17: still wallet-free, but writes go through operator server routes._
+18. **`/` has a fork-only faucet:** "Fund 10 WETH + open sample loan", so slice 7's acceptance criterion is reachable. _Superseded by §17: the faucet is the operator mint route._
 19. **Approval:** unlimited aWETH approval with a prominent revoke button.
+
+## 17. Testnet demo decisions (2026-11-04; supersede §5.9 and the anvil parts of §16)
+
+The hackathon wants **real transactions on a public network**, so the demo runs on **Monad testnet (chain 10143)** and the anvil fork demo is dropped.
+
+1. **Lending venue:** Aave isn't deployed on Monad testnet; none of the mainnet Aave or Uniswap addresses have code there (checked on-chain). We deploy our own **Aave V3-compatible test pool** (`TestnetAave`, promoted from the MockAave test double) and present it honestly as that. The Shield code is identical; on mainnet it points at real Aave.
+2. **Owner-gated test pool:** price setting, minting and reserve listing are owner-only, so nobody else on the public testnet can crash our price mid-demo.
+3. **Signer for demo writes:** Next.js server routes sign with a testnet-only `OPERATOR_PRIVATE_KEY` from server-side env. No wallet popups on stage.
+4. **Reset:** fresh Alice and Bob per run, derived from `DEMO_MNEMONIC` at the next index, funded, and re-seeded at HF 1.30 with price back at $3000. No snapshots exist on testnet.
+5. **Swap venue:** `OracleSwapAdapter` on testnet (already allowed by §5.8).
+6. **Anvil dropped:** no fork script, no 31430 gating, no `anvil_*` calls, no rewind handling. The real-Aave fork tests move to stretch, together with the mainnet adapter work.
+7. **Keeper RPC:** a provider WebSocket RPC, with the public RPC as fallback (it's rate-limited).
+8. **Proof on screen:** every ticker event links to the testnet explorer, and a "Testnet · chain 10143" badge is always shown.
+9. **Token naming:** tWETH / tUSDC (and atWETH) in the UI.
+10. **Product page `/`:** stays, on testnet, with a faucet that calls the operator mint route. It comes after `/demo` in priority.
