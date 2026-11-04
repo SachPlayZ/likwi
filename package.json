@@ -17,7 +17,8 @@
     "demo:seed": "node --env-file-if-exists=.env --import tsx demo/src/bin/seed.ts",
     "demo:crash": "node --env-file-if-exists=.env --import tsx demo/src/bin/crash.ts",
     "demo:liquidator": "node --env-file-if-exists=.env --import tsx demo/src/bin/liquidator.ts",
-    "keeper": "node --env-file-if-exists=.env --import tsx keeper/src/index.ts"
+    "keeper": "npm start -w @liquidation-shield/keeper",
+    "test:keeper": "npm test -w @liquidation-shield/keeper"
   },
   "devDependencies": {
     "@types/node": "^22.20.5",

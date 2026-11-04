@@ -1,5 +1,5 @@
 // `demo deploy` (BRIEF §9): the test pool, the oracle adapter and the Shield, plus gas and tokens for the bots.
-import { writeFileSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { parseEther, type Address, type Hex } from "viem";
 import {
   liquidationShieldAbi,
@@ -11,9 +11,10 @@ import {
   testnetERC20Abi,
   testnetPoolAbi,
   explorerTxUrl,
+  testnetChain,
   type Deployments,
 } from "@liquidation-shield/shared";
-import { account, confirm, WEB_ENV_PATH, writeDeployments, type Context } from "./context";
+import { account, confirm, KEEPER_ENV_PATH, WEB_ENV_PATH, writeDeployments, type Context } from "./context";
 
 const ADAPTER_FEE_BPS = 30;
 const KEEPER_FEE_BPS = 10;
@@ -106,6 +107,7 @@ export async function deployAll(ctx: Context): Promise<Deployments> {
   };
   writeDeployments(d);
   writeWebEnv(d);
+  writeKeeperEnv(d);
   return d;
 }
 
@@ -124,4 +126,26 @@ function writeWebEnv(d: Deployments): void {
     NEXT_PUBLIC_DEPLOY_BLOCK: d.deployBlock,
   };
   writeFileSync(WEB_ENV_PATH, Object.entries(vars).map(([k, v]) => `${k}=${v}`).join("\n") + "\n");
+}
+
+/** Upserts the keeper's env (keeper/.env, gitignored) so `npm run keeper` watches this deploy. Other lines are kept. */
+export function writeKeeperEnv(d: Deployments): void {
+  const vars: Record<string, string | undefined> = {
+    CHAIN: "testnet",
+    RPC_URL: process.env.RPC_URL || testnetChain.rpcUrls.default.http[0],
+    WS_URL: process.env.WS_URL,
+    KEEPER_PRIVATE_KEY: process.env.KEEPER_PRIVATE_KEY,
+    SHIELD_ADDRESS: d.shield,
+    DEPLOY_BLOCK: d.deployBlock,
+  };
+  const lines = existsSync(KEEPER_ENV_PATH) ? readFileSync(KEEPER_ENV_PATH, "utf8").split("\n").filter(Boolean) : [];
+  for (const [k, v] of Object.entries(vars)) {
+    if (!v) continue;
+    const i = lines.findIndex((l) => l.startsWith(`${k}=`));
+    if (i >= 0) lines[i] = `${k}=${v}`;
+    else lines.push(`${k}=${v}`);
+  }
+  // Monad's public RPC rejects eth_getLogs over 100 blocks; only a default, so a provider override survives.
+  if (!lines.some((l) => l.startsWith("LOG_CHUNK="))) lines.push("LOG_CHUNK=100");
+  writeFileSync(KEEPER_ENV_PATH, lines.join("\n") + "\n", { mode: 0o600 });
 }

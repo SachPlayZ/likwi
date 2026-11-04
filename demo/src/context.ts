@@ -31,6 +31,7 @@ export type Context = {
 
 const DEPLOYMENTS_PATH = fileURLToPath(new URL("../.deployments.json", import.meta.url));
 export const WEB_ENV_PATH = fileURLToPath(new URL("../../web/.env.local", import.meta.url));
+export const KEEPER_ENV_PATH = fileURLToPath(new URL("../../keeper/.env", import.meta.url));
 
 export function env(name: string): string {
   const v = process.env[name];

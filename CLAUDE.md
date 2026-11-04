@@ -53,7 +53,9 @@ Check `package.json` before relying on them, and update this section when they c
 - `forge build` / `forge test` (in `contracts/`), or `npm run test:contracts` from the root
 - `npm run abis`: `forge build`, then regenerate typed ABIs into `packages/shared/src/generated.ts` (committed; rerun after any contract interface change). Add new contracts to the list in `packages/shared/scripts/gen-abis.mjs`.
 - `npm run typecheck`: type-check every workspace
-- Demo (Monad testnet; `cp .env.example .env` and fill it first): `npm run demo:deploy` (once, beforehand; writes `demo/.deployments.json` + `web/.env.local`) → `npm run demo:seed` (new run; `-- --run n` to pick one) → `npm run keeper` → `npm run demo:liquidator` → `npm run demo:crash -- --slow` (or `-- --pct N`). #16 adds `npm run web` + `/demo`.
+- Demo (Monad testnet; `cp .env.example .env` and fill it first): `npm run demo:deploy` (once, beforehand; writes `demo/.deployments.json`, `web/.env.local`, and upserts `keeper/.env`) → `npm run demo:seed` (new run; `-- --run n` to pick one) → `npm run keeper` → `npm run demo:liquidator` → `npm run demo:crash -- --slow` (or `-- --pct N`). #16 adds `npm run web` + `/demo`.
+- `npm run keeper`: run the keeper (env in `keeper/.env`, see `keeper/.env.example`; `DRY_RUN=true` simulates only). `GET :8787/health` and `/status`.
+- `npm run test:keeper`: keeper vitest suite (tick behaviour with stubbed viem clients)
 - Local dry run: `anvil --chain-id 10143 --block-time 0.3`, then point `RPC_URL` at it (anvil keys only).
 
 ## Agent skills
