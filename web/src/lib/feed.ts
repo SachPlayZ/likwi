@@ -33,6 +33,7 @@ export const client = createPublicClient({
 
 export type DemoState = {
   chainId: number;
+  deployBlock: string;
   pool: Address;
   oracle: Address;
   weth: Address;

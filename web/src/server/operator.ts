@@ -1,20 +1,43 @@
 // Operator for the /demo routes (BRIEF §8, §17.3). Signs with the testnet-only OPERATOR_PRIVATE_KEY from
 // server-side env, reusing the `demo` package. One action at a time; actions run in the background so a
 // 10 s slow crash doesn't hold the request open. Only imported by route handlers, never by client code.
-import type { Hex } from "viem";
-import { connect, crash, readDeployments, seedRun, slowCrash, type Context } from "@liquidation-shield/demo";
-import { TESTNET_CHAIN_ID } from "@liquidation-shield/shared";
+import { parseEther, type Address, type Hex } from "viem";
+import { confirm, connect, crash, readDeployments, seedRun, slowCrash, type Context } from "@liquidation-shield/demo";
+import { TESTNET_CHAIN_ID, testnetERC20Abi } from "@liquidation-shield/shared";
 
 /** `price`: the tWETH price this tx set; `block` + `index` place it, so the page can value events at the
  *  price in force at their own position in the block (a crash tick can land in the same block). */
 export type OperatorTx = { kind: "price" | "reset"; label: string; hash: Hex; block: string; index: number; price?: number };
-export type Busy = "reset" | "crash" | null;
+export type Busy = "reset" | "crash" | "faucet" | null;
 
-type State = { ctx?: Promise<Context>; busy: Busy; error?: string; txs: OperatorTx[] };
+type State = {
+  ctx?: Promise<Context>;
+  busy: Busy;
+  error?: string;
+  txs: OperatorTx[];
+  /** Product-page faucet: addresses already served (once each), and MON drips sent so far. */
+  faucet: { served: Set<string>; drips: number };
+};
 
 // globalThis: Next can load this module more than once (per route, and on dev reloads).
 const g = globalThis as { __operator?: State };
-const state: State = (g.__operator ??= { busy: null, txs: [] });
+const state: State = (g.__operator ??= { busy: null, txs: [], faucet: { served: new Set(), drips: 0 } });
+state.faucet ??= { served: new Set(), drips: 0 };
+
+const FAUCET_WETH = 10n * 10n ** 18n; // 10 tWETH
+const FAUCET_GAS = () => parseEther(process.env.FAUCET_GAS_MON ?? "0.05");
+const FAUCET_MAX_DRIPS = () => Number(process.env.FAUCET_MAX_DRIPS ?? "30");
+
+export type FaucetResult = { mint: Hex; gas?: Hex };
+
+export class FaucetError extends Error {
+  constructor(
+    message: string,
+    readonly status: number,
+  ) {
+    super(message);
+  }
+}
 
 /** Ticker lines: price moves, plus one line per Reset (the price reset that opens it). Setup txs are skipped. */
 function record(tx: { label: string; hash: Hex; block: bigint; index: number }) {
@@ -60,8 +83,42 @@ function run(kind: Exclude<Busy, null>, action: (ctx: Context) => Promise<unknow
   return true;
 }
 
+/**
+ * Product-page faucet (BRIEF §8): mints 10 tWETH to `to` and, if the wallet has almost no MON, sends a small gas
+ * drip so a fresh wallet can open its own loan. Once per address; MON drips are capped per server run so a public
+ * page can't drain the operator. Shares the operator lock: one signer, so no two of its txs race for a nonce.
+ */
+async function faucet(to: Address): Promise<FaucetResult> {
+  const key = to.toLowerCase();
+  if (state.faucet.served.has(key)) throw new FaucetError("This wallet already used the faucet.", 429);
+  if (state.busy) throw new FaucetError(`Operator busy (${state.busy}); try again in a few seconds.`, 409);
+  state.busy = "faucet";
+  try {
+    const ctx = await context();
+    const d = readDeployments();
+    const mint = await confirm(
+      ctx,
+      `faucet: mint 10 tWETH → ${to}`,
+      ctx.operator.writeContract({ address: d.weth, abi: testnetERC20Abi, functionName: "mint", args: [to, FAUCET_WETH] }),
+    );
+    state.faucet.served.add(key);
+
+    let gas: Hex | undefined;
+    const drip = FAUCET_GAS();
+    const balance = await ctx.client.getBalance({ address: to });
+    if (balance < drip / 2n && state.faucet.drips < FAUCET_MAX_DRIPS()) {
+      state.faucet.drips++;
+      gas = await confirm(ctx, `faucet: MON gas → ${to}`, ctx.operator.sendTransaction({ to, value: drip }));
+    }
+    return { mint, gas };
+  } finally {
+    state.busy = null;
+  }
+}
+
 export const operator = {
   chainId: TESTNET_CHAIN_ID,
+  faucet,
   reset: () => run("reset", (ctx) => seedRun(ctx, readDeployments())),
   crash: (pct: bigint) => run("crash", (ctx) => crash(ctx, readDeployments(), pct)),
   slowCrash: () => run("crash", (ctx) => slowCrash(ctx, readDeployments())),

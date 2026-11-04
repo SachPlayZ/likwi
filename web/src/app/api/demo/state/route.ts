@@ -11,6 +11,6 @@ export function GET() {
   } catch (e) {
     return Response.json({ error: (e as Error).message }, { status: 503 });
   }
-  const { chainId, pool, oracle, weth, usdc, aWeth, vUsdc, shield, keeper, liquidator, run } = d;
-  return Response.json({ chainId, pool, oracle, weth, usdc, aWeth, vUsdc, shield, keeper, liquidator, run, ...operator.status() });
+  const { chainId, deployBlock, pool, oracle, weth, usdc, aWeth, vUsdc, shield, keeper, liquidator, run } = d;
+  return Response.json({ chainId, deployBlock, pool, oracle, weth, usdc, aWeth, vUsdc, shield, keeper, liquidator, run, ...operator.status() });
 }

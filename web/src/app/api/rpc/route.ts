@@ -1,10 +1,19 @@
-// POST /api/rpc: read-only JSON-RPC proxy for the /demo page. The browser never sees RPC_URL (a provider key);
-// the server forwards to it, or to the public RPC when unset. Only the read methods the page uses are allowed.
+// POST /api/rpc: read-only JSON-RPC proxy for the web pages. The browser never sees RPC_URL (a provider key);
+// the server forwards to it, or to the public RPC when unset. Only the read methods the pages use are allowed;
+// the product page (/) also reads balances and waits for its wallet's receipts. Writes go through the wallet.
 import { testnetChain } from "@liquidation-shield/shared";
 
 export const dynamic = "force-dynamic";
 
-const ALLOWED = new Set(["eth_chainId", "eth_blockNumber", "eth_call", "eth_getLogs"]);
+const ALLOWED = new Set([
+  "eth_chainId",
+  "eth_blockNumber",
+  "eth_call",
+  "eth_getLogs",
+  "eth_getBalance",
+  "eth_getTransactionReceipt",
+  "eth_getTransactionByHash",
+]);
 const upstream = () => process.env.RPC_URL || testnetChain.rpcUrls.default.http[0];
 
 type Call = { method?: unknown };
