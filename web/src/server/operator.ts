@@ -2,8 +2,8 @@
 // server-side env, reusing the `demo` package. One action at a time; actions run in the background so a
 // 10 s slow crash doesn't hold the request open. Only imported by route handlers, never by client code.
 import { parseEther, type Address, type Hex } from "viem";
-import { confirm, connect, crash, readDeployments, seedRun, slowCrash, type Context } from "@liquidation-shield/demo";
-import { TESTNET_CHAIN_ID, testnetERC20Abi } from "@liquidation-shield/shared";
+import { confirm, connect, crash, latestDeployments, readDeployments, seedRun, slowCrash, type Context } from "@liquidation-shield/demo";
+import { TESTNET_CHAIN_ID, testnetERC20Abi, type Deployments } from "@liquidation-shield/shared";
 
 /** `price`: the tWETH price this tx set; `block` + `index` place it, so the page can value events at the
  *  price in force at their own position in the block (a crash tick can land in the same block). */
@@ -118,12 +118,24 @@ async function faucet(to: Address): Promise<FaucetResult> {
   }
 }
 
+/** latestDeployments, re-checked at most every 5 s: the page polls state often and the public RPC rate-limits. */
+let cached: { at: number; d: Promise<Deployments> } | undefined;
+function deployments(): Promise<Deployments> {
+  if (!cached || Date.now() - cached.at > 5_000) {
+    const d = context().then(latestDeployments);
+    d.catch(() => (cached = undefined));
+    cached = { at: Date.now(), d };
+  }
+  return cached.d;
+}
+
 export const operator = {
   chainId: TESTNET_CHAIN_ID,
   faucet,
-  reset: () => run("reset", (ctx) => seedRun(ctx, readDeployments())),
+  reset: () => run("reset", async (ctx) => seedRun(ctx, await latestDeployments(ctx))),
   crash: (pct: bigint) => run("crash", (ctx) => crash(ctx, readDeployments(), pct)),
   slowCrash: () => run("crash", (ctx) => slowCrash(ctx, readDeployments())),
+  deployments,
   pending: () => state.pending ?? Promise.resolve(),
   status: () => ({ busy: state.busy, error: state.error, txs: state.txs }),
 };

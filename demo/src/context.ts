@@ -91,4 +91,24 @@ export function writeDeployments(d: Deployments): void {
   writeFileSync(/*turbopackIgnore: true*/ DEPLOYMENTS_PATH, JSON.stringify(d, null, 2) + "\n");
 }
 
+/**
+ * The deployments with `run` caught up to the chain: the newest run whose Alice has sent a tx. Each process keeps
+ * its own deployments file (the hosted web app's lives in /tmp and resets on a cold start), so without this a Reset
+ * from the web is invisible to the local liquidator, and a cold start shows a stale run.
+ */
+export async function latestDeployments(ctx: Context): Promise<Deployments> {
+  const d = readDeployments();
+  let n = d.run?.n ?? -1;
+  while ((await ctx.client.getTransactionCount({ address: runAccounts(n + 1).alice.address })) > 0) n++;
+  if (n === (d.run?.n ?? -1)) return d;
+  const { alice, bob } = runAccounts(n);
+  // startBlock: where this process first saw the run, close enough for the chart's window.
+  const next: Deployments = {
+    ...d,
+    run: { n, alice: alice.address, bob: bob.address, startBlock: (await ctx.client.getBlockNumber()).toString() },
+  };
+  writeDeployments(next);
+  return next;
+}
+
 export const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
