@@ -1,5 +1,11 @@
 // Entry point: `npm run keeper`. Env is documented in keeper/.env.example.
-import { buildTransports, createKeeperPublicClient, createKeeperWalletClient, makeFallbackTransport } from "./clients";
+import {
+  assertChain,
+  buildTransports,
+  createKeeperPublicClient,
+  createKeeperWalletClient,
+  makeFallbackTransport,
+} from "./clients";
 import { ConfigError, loadConfig } from "./config";
 import { jsonLogger } from "./log";
 import { Keeper } from "./loop";
@@ -7,7 +13,7 @@ import { startStatusServer } from "./status";
 
 const log = jsonLogger();
 
-function main() {
+async function main() {
   try {
     process.loadEnvFile(".env"); // keeper/.env, if present; real env vars still win
   } catch {
@@ -26,6 +32,12 @@ function main() {
 
   const transport = makeFallbackTransport(buildTransports(cfg));
   const publicClient = createKeeperPublicClient(transport, cfg.chain);
+  try {
+    await assertChain(publicClient, cfg.chain);
+  } catch (e) {
+    console.error((e as Error).message);
+    process.exit(1);
+  }
   const walletClient = createKeeperWalletClient(transport, cfg.chain, cfg.privateKey);
   const keeper = new Keeper({ config: cfg.keeper, publicClient, walletClient, log });
   const server = startStatusServer(keeper, cfg.statusPort, log);
@@ -37,6 +49,7 @@ function main() {
     users: cfg.keeper.users ?? "from events",
     ws: Boolean(cfg.wsUrl),
     dryRun: cfg.keeper.dryRun,
+    explorer: cfg.keeper.explorerUrl,
   });
   keeper.start({ poll: !cfg.wsUrl });
 
@@ -54,4 +67,4 @@ function main() {
   process.on("SIGTERM", () => void shutdown("SIGTERM"));
 }
 
-main();
+await main();

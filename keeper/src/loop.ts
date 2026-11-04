@@ -16,6 +16,8 @@ export type KeeperConfig = {
   /** Static user list (USERS env): skips log backfill. */
   users?: readonly Address[];
   dryRun: boolean;
+  /** Block explorer base URL; each tx is logged with `${explorerUrl}/tx/${hash}`. */
+  explorerUrl?: string;
 };
 
 export type ActionName = "None" | "Step" | "ClearUnwind";
@@ -30,6 +32,7 @@ export type UserStatus = {
   /** Why the last preview read failed, if it did (the user stays listed with its last known values). */
   readError?: string;
   lastTx?: Hex;
+  lastTxUrl?: string;
   lastError?: string;
 };
 
@@ -69,7 +72,14 @@ export class Keeper {
     this.#client = publicClient;
     this.#log = log;
     this.#registry = new UserRegistry(publicClient, config.shield, config.deployBlock, config.logChunk, config.users);
-    this.#executor = new Executor({ publicClient, walletClient, shield: config.shield, dryRun: config.dryRun, log });
+    this.#executor = new Executor({
+      publicClient,
+      walletClient,
+      shield: config.shield,
+      dryRun: config.dryRun,
+      explorerUrl: config.explorerUrl,
+      log,
+    });
   }
 
   async tick(block: bigint): Promise<TickOutcome> {
@@ -125,7 +135,7 @@ export class Keeper {
   status() {
     const ex = this.#executor.stats;
     return {
-      users: [...this.#users.values()].map((u) => ({ ...u, ...this.#executor.state(u.user) })),
+      users: [...this.#users.values()].map((u): UserStatus => ({ ...u, ...this.#executor.state(u.user) })),
       stats: {
         ticks: this.#stats.ticks,
         skippedTicks: this.#stats.skippedTicks,

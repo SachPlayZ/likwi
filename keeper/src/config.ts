@@ -73,6 +73,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
       heartbeatEveryBlocks: heartbeat,
       users: users as Address[] | undefined,
       dryRun: dryRaw === "true" || dryRaw === "1",
+      explorerUrl: CHAINS[chain].blockExplorers?.default.url,
     },
   };
 }

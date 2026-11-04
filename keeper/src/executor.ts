@@ -7,7 +7,7 @@ import { errorMessage, type Logger } from "./log";
 
 const HEARTBEAT = "heartbeat";
 
-export type TxState = { lastTx?: Hex; lastError?: string };
+export type TxState = { lastTx?: Hex; lastTxUrl?: string; lastError?: string };
 
 export class Executor {
   readonly stats = { protects: 0, heartbeats: 0, failures: 0, dryRuns: 0 };
@@ -21,9 +21,14 @@ export class Executor {
       walletClient: Pick<KeeperWalletClient, "writeContract" | "account">;
       shield: Address;
       dryRun: boolean;
+      explorerUrl?: string;
       log: Logger;
     },
   ) {}
+
+  #txUrl(hash: Hex): string | undefined {
+    return this.deps.explorerUrl ? `${this.deps.explorerUrl.replace(/\/$/, "")}/tx/${hash}` : undefined;
+  }
 
   /** Starts `protect(user)` unless one is already in flight. Returns whether it was dispatched. */
   protect(user: Address, reason: string): boolean {
@@ -84,13 +89,15 @@ export class Executor {
         return;
       }
       const hash = await walletClient.writeContract(request as never);
+      const url = this.#txUrl(hash);
       state.lastTx = hash;
-      log("info", "tx sent", { functionName, key, reason, hash });
+      state.lastTxUrl = url;
+      log("info", "tx sent", { functionName, key, reason, hash, url });
       const receipt = await publicClient.waitForTransactionReceipt({ hash });
-      if (receipt.status !== "success") throw new Error(`tx reverted: ${hash}`);
+      if (receipt.status !== "success") throw new Error(`tx reverted: ${url ?? hash}`);
       state.lastError = undefined;
       onSuccess();
-      log("info", "tx confirmed", { functionName, key, hash });
+      log("info", "tx confirmed", { functionName, key, hash, url });
     } catch (e) {
       this.stats.failures++;
       state.lastError = errorMessage(e);
