@@ -69,7 +69,7 @@ export function DemoScreen() {
             <LogoMark />
           </Link>
           <div>
-            <h1>Liquidation Shield</h1>
+            <h1>likwi</h1>
             <p className="eyebrow">Per-block protection · Aave V3-compatible test pool</p>
           </div>
         </div>

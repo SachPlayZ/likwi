@@ -37,7 +37,7 @@ function Nav() {
     >
       <Link href="/" className="flex items-center gap-2.5">
         <LogoMark className="h-7 w-7 text-white" />
-        <span className="font-serif text-xl">Liquidation Shield</span>
+        <span className="font-serif text-2xl">likwi</span>
       </Link>
       <nav className="flex items-center gap-2">
         <Button asChild variant="ghost" size="sm" className="hidden sm:inline-flex">
@@ -327,7 +327,7 @@ function Footer() {
   return (
     <footer className="flex flex-col items-center justify-between gap-4 border-t border-white/10 px-6 py-10 font-mono text-xs text-muted-foreground md:flex-row md:px-16">
       <div className="flex items-center gap-2">
-        <LogoMark className="h-5 w-5 text-white" /> Liquidation Shield · Monad Blitz, DevCon Mumbai
+        <LogoMark className="h-5 w-5 text-white" /> likwi · Monad Blitz, DevCon Mumbai
       </div>
       <div>Testnet only. Not audited. Not financial advice.</div>
     </footer>
