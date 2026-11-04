@@ -17,3 +17,5 @@ web/next-env.d.ts
 web/.env.local
 demo/.deployments.json
 *.tsbuildinfo
+.vercel
+.env*

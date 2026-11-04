@@ -1,0 +1,10 @@
+contracts/lib
+contracts/out
+contracts/cache
+contracts/broadcast
+**/node_modules
+web/.next
+.env
+.env.*
+!.env.example
+keeper/.env
