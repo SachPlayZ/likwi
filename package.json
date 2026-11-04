@@ -12,7 +12,9 @@
     "build:contracts": "npm run build -w @liquidation-shield/contracts",
     "test:contracts": "npm test -w @liquidation-shield/contracts",
     "abis": "npm run build:contracts && npm run abis -w @liquidation-shield/shared",
-    "typecheck": "npm run typecheck --workspaces --if-present"
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "keeper": "npm start -w @liquidation-shield/keeper",
+    "test:keeper": "npm test -w @liquidation-shield/keeper"
   },
   "devDependencies": {
     "typescript": "^5.9.3"
