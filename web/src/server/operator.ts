@@ -17,6 +17,8 @@ type State = {
   txs: OperatorTx[];
   /** Product-page faucet: addresses already served (once each), and MON drips sent so far. */
   faucet: { served: Set<string>; drips: number };
+  /** The running action; routes hand it to `after()` so serverless hosts keep it alive past the response. */
+  pending?: Promise<unknown>;
 };
 
 // globalThis: Next can load this module more than once (per route, and on dev reloads).
@@ -70,7 +72,7 @@ function run(kind: Exclude<Busy, null>, action: (ctx: Context) => Promise<unknow
   if (state.busy) return false;
   state.busy = kind;
   state.error = undefined;
-  void context()
+  state.pending = context()
     .then(action)
     .catch((e: Error) => {
       const status = e.message.match(/Status: (\d+)/)?.[1];
@@ -122,5 +124,6 @@ export const operator = {
   reset: () => run("reset", (ctx) => seedRun(ctx, readDeployments())),
   crash: (pct: bigint) => run("crash", (ctx) => crash(ctx, readDeployments(), pct)),
   slowCrash: () => run("crash", (ctx) => slowCrash(ctx, readDeployments())),
+  pending: () => state.pending ?? Promise.resolve(),
   status: () => ({ busy: state.busy, error: state.error, txs: state.txs }),
 };

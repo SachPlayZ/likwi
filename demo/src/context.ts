@@ -35,7 +35,8 @@ export type Context = {
 // Repo root: REPO_ROOT (set by the web server) or relative to this file. No `new URL(literal, import.meta.url)`,
 // which bundlers would copy as a static asset.
 const ROOT = process.env.REPO_ROOT ?? resolve(dirname(fileURLToPath(import.meta.url)), "../..");
-const DEPLOYMENTS_PATH = resolve(ROOT, "demo/.deployments.json");
+// DEPLOYMENTS_FILE: a writable path on serverless hosts (e.g. /tmp/deployments.json on Vercel).
+const DEPLOYMENTS_PATH = process.env.DEPLOYMENTS_FILE ?? resolve(ROOT, "demo/.deployments.json");
 export const WEB_ENV_PATH = resolve(ROOT, "web/.env.local");
 export const KEEPER_ENV_PATH = resolve(ROOT, "keeper/.env");
 
@@ -78,12 +79,16 @@ export async function confirm(ctx: Context, label: string, hash: Promise<Hex> | 
 }
 
 export function readDeployments(): Deployments {
-  if (!existsSync(DEPLOYMENTS_PATH)) throw new Error("No demo/.deployments.json. Run `npm run demo:deploy` first.");
-  return JSON.parse(readFileSync(DEPLOYMENTS_PATH, "utf8")) as Deployments;
+  if (!existsSync(/*turbopackIgnore: true*/ DEPLOYMENTS_PATH)) {
+    // Hosted web app: the deploy's public addresses come from env until a Reset writes the file.
+    if (process.env.DEMO_DEPLOYMENTS) return JSON.parse(process.env.DEMO_DEPLOYMENTS) as Deployments;
+    throw new Error("No demo/.deployments.json. Run `npm run demo:deploy` first.");
+  }
+  return JSON.parse(readFileSync(/*turbopackIgnore: true*/ DEPLOYMENTS_PATH, "utf8")) as Deployments;
 }
 
 export function writeDeployments(d: Deployments): void {
-  writeFileSync(DEPLOYMENTS_PATH, JSON.stringify(d, null, 2) + "\n");
+  writeFileSync(/*turbopackIgnore: true*/ DEPLOYMENTS_PATH, JSON.stringify(d, null, 2) + "\n");
 }
 
 export const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
