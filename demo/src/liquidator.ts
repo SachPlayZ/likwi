@@ -2,7 +2,7 @@
 // current run's Alice and liquidates her (50% close factor, max debt) while her HF is below 1.
 import { maxUint256, type Address } from "viem";
 import { testnetERC20Abi, testnetPoolAbi } from "@liquidation-shield/shared";
-import { account, confirm, readDeployments, type Context } from "./context";
+import { account, confirm, latestDeployments, readDeployments, type Context } from "./context";
 
 const ONE = 10n ** 18n;
 
@@ -21,6 +21,8 @@ export async function runLiquidator(ctx: Context): Promise<() => void> {
   console.log(`Liquidator ${liq.account.address} watching the current run's Alice…`);
 
   let busy = false;
+  let ticks = 0;
+  let d = await latestDeployments(ctx);
   return ctx.client.watchBlockNumber({
     emitMissed: false,
     pollingInterval: 400, // ~every other block; the public RPC rate-limits bursts
@@ -29,7 +31,8 @@ export async function runLiquidator(ctx: Context): Promise<() => void> {
       if (busy) return; // one liquidation in flight at a time
       busy = true;
       try {
-        const d = readDeployments(); // a new `demo seed` switches Alice without a restart
+        // A Reset (CLI or web) switches Alice without a restart; ~every 10 s is soon enough to notice.
+        if (++ticks % 25 === 0) d = await latestDeployments(ctx);
         const alice = d.run?.alice as Address | undefined;
         if (!alice) return;
         const [, , , , , hf] = await ctx.client.readContract({ address: d.pool, abi: testnetPoolAbi, functionName: "getUserAccountData", args: [alice] });

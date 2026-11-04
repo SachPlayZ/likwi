@@ -45,7 +45,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
   for (const u of users ?? []) if (!isAddress(u)) problems.push(`USERS contains a bad address: "${u}"`);
 
   const deployBlock = users ? uint("DEPLOY_BLOCK", "0") : uint("DEPLOY_BLOCK", "");
-  const heartbeat = uint("HEARTBEAT_EVERY_BLOCKS", "10");
+  const heartbeat = uint("HEARTBEAT_EVERY_BLOCKS", "30");
   const logChunk = uint("LOG_CHUNK", "1000");
   const concurrency = uint("CONCURRENCY", "16");
   const statusPort = uint("STATUS_PORT", "8787");

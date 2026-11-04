@@ -38,8 +38,9 @@ export async function seedRun(ctx: Context, d: Deployments, n = (d.run?.n ?? -1)
   console.log(`Run ${n}: Alice ${alice.address}, Bob ${bob.address}`);
   if (d.run) await retirePreviousBob(ctx, d, d.run.n);
 
-  // Operator: price back to $3000, gas and 20 tWETH for each.
+  // Operator: price back to $3000, bots topped up, gas and 20 tWETH for each.
   await setPrice(ctx, d, START_PRICE, "reset price → $3000");
+  await topUpBots(ctx, d);
   const gas = parseEther(process.env.DEMO_USER_GAS_MON ?? "0.1");
   for (const [name, who] of [["Alice", alice], ["Bob", bob]] as const) {
     await confirm(ctx, `fund ${name} (MON gas)`, ctx.operator.sendTransaction({ to: who.address, value: gas }));
@@ -59,6 +60,22 @@ export async function seedRun(ctx: Context, d: Deployments, n = (d.run?.n ?? -1)
   };
   writeDeployments(next);
   return next;
+}
+
+/**
+ * Refills the keeper and liquidator to their deploy-time gas when below half of it. Monad bills the gas limit, so a
+ * keeper that ran dry stops landing Steps without any error the demo can see.
+ */
+export async function topUpBots(ctx: Context, d: Deployments) {
+  const bots = [
+    ["keeper", d.keeper, parseEther(process.env.KEEPER_GAS_MON ?? "1")],
+    ["liquidator", d.liquidator, parseEther(process.env.LIQUIDATOR_GAS_MON ?? "0.3")],
+  ] as const;
+  for (const [name, to, want] of bots) {
+    const have = await ctx.client.getBalance({ address: to });
+    if (have >= want / 2n) continue;
+    await confirm(ctx, `top up ${name} (MON gas)`, ctx.operator.sendTransaction({ to, value: want - have }));
+  }
 }
 
 /**

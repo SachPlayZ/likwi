@@ -262,11 +262,11 @@ function HfChart({ points, snap }: { points: Point[]; snap?: Snapshot }) {
           Health factor · per block
         </span>
         <span>
-          <i style={{ background: "var(--coral)" }} />
+          <i style={{ background: "rgba(255,255,255,0.45)" }} />
           Alice
         </span>
         <span>
-          <i style={{ background: "var(--purple-hi)" }} />
+          <i style={{ background: "#fff" }} />
           Bob
         </span>
         <span style={{ color: "var(--amber)" }}>
@@ -296,15 +296,15 @@ function HfChart({ points, snap }: { points: Point[]; snap?: Snapshot }) {
             width={48}
           />
           <Tooltip
-            contentStyle={{ background: "var(--panel-2)", border: "1px solid var(--line)", borderRadius: 8 }}
+            contentStyle={{ background: "#000", border: "1px solid rgba(255,255,255,0.2)", borderRadius: 8 }}
             labelFormatter={(b) => `block ${b}`}
             formatter={(v, name) => [Number(v).toFixed(3), name === "alice" ? "Alice" : "Bob"]}
           />
           <ReferenceLine y={1} stroke="var(--red)" strokeWidth={2} />
           <ReferenceLine y={trigger} stroke="var(--amber)" strokeDasharray="6 5" />
           <ReferenceLine y={target} stroke="var(--green)" strokeDasharray="6 5" />
-          <Line type="stepAfter" dataKey="alice" stroke="var(--coral)" strokeWidth={3} dot={false} isAnimationActive={false} />
-          <Line type="stepAfter" dataKey="bob" stroke="var(--purple-hi)" strokeWidth={3} dot={false} isAnimationActive={false} />
+          <Line type="stepAfter" dataKey="alice" stroke="rgba(255,255,255,0.45)" strokeWidth={3} strokeDasharray="2 6" strokeLinecap="round" dot={false} isAnimationActive={false} />
+          <Line type="stepAfter" dataKey="bob" stroke="#fff" strokeWidth={3} dot={false} isAnimationActive={false} />
         </LineChart>
       </ResponsiveContainer>
     </div>
