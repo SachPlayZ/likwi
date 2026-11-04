@@ -10,7 +10,7 @@ const serif = Instrument_Serif({ subsets: ["latin"], weight: "400", style: ["nor
 const hand = Caveat({ subsets: ["latin"], variable: "--font-hand" });
 
 export const metadata: Metadata = {
-  title: "Liquidation Shield",
+  title: "likwi",
   description: "Per-block liquidation protection for Aave V3 borrowers on Monad.",
 };
 

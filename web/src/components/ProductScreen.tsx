@@ -65,7 +65,7 @@ export function ProductScreen() {
             <LogoMark />
           </Link>
           <div>
-            <h1>Liquidation Shield</h1>
+            <h1>likwi</h1>
             <p className="eyebrow">Per-block protection · Aave V3-compatible test pool</p>
           </div>
         </div>
@@ -126,7 +126,9 @@ function Intro() {
   return (
     <section className="panel intro">
       <p className="eyebrow">Monad testnet · bring your own wallet</p>
-      <h2>Don&apos;t get liquidated. Get deleveraged, a little every block.</h2>
+      <h2>
+        Don&apos;t get liquidated. <em>Get deleveraged, a little every block.</em>
+      </h2>
       <p className="muted">
         Opt in with your trigger and target health factor, grant one revocable atWETH allowance, and the keeper checks
         your loan every block (~0.4s). Below your trigger, a flash-loan Step repays debt and sells just enough collateral,
@@ -557,7 +559,7 @@ function ShieldCard({ s, r, tx }: { s: DemoState; r: Reads; tx: ReturnType<typeo
     <article className="panel shield-card">
       <div className="card-head">
         <div>
-          <p className="eyebrow">Liquidation Shield</p>
+          <p className="eyebrow">likwi</p>
           <h2 className="card-title">{active ? "Your Shield" : "Activate your Shield"}</h2>
         </div>
         <span className="chip" style={{ color: status.tone }}>

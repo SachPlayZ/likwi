@@ -1,4 +1,4 @@
-# Liquidation Shield
+# likwi
 
 **Non-custodial, per-block liquidation protection for Aave V3 borrowers on Monad.** A permissionless `protect(user)` call deleverages a position with a flash loan, gradually across blocks, before it can be liquidated. The borrower keeps their position and pays a small fee instead of a 5% liquidation penalty.
 
