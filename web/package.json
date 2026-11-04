@@ -1,0 +1,12 @@
+{
+  "name": "@liquidation-shield/web",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "@liquidation-shield/shared": "*",
+    "viem": "^2.57.16"
+  }
+}

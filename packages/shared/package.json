@@ -1,0 +1,14 @@
+{
+  "name": "@liquidation-shield/shared",
+  "private": true,
+  "type": "module",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "abis": "node scripts/gen-abis.mjs",
+    "typecheck": "tsc -p tsconfig.json"
+  }
+}

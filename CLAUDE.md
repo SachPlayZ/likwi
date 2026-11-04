@@ -45,11 +45,12 @@ If code and BRIEF disagree, flag it to the user; don't silently pick one.
 
 ## Commands
 
-Planned in BRIEF §9 and §11; they become real as tickets #11 and #15 land. Check `package.json` before relying on them, and update this section when they change.
+Check `package.json` before relying on them, and update this section when they change. After cloning: `git submodule update --init --recursive && npm install`.
 
-- `forge build` / `forge test` (in `contracts/`)
-- `npm run abis`: regenerate typed ABIs
-- Demo day order: `npm run fork` → `npm run demo:setup` → `npm run keeper` → `npm run demo:liquidator` → `npm run web`, then open `/demo`
+- `forge build` / `forge test` (in `contracts/`), or `npm run test:contracts` from the root
+- `npm run abis`: `forge build`, then regenerate typed ABIs into `packages/shared/src/generated.ts` (committed; rerun after any contract interface change). Add new contracts to the list in `packages/shared/scripts/gen-abis.mjs`.
+- `npm run typecheck`: type-check every workspace
+- Planned (#15): demo day order: `npm run fork` → `npm run demo:setup` → `npm run keeper` → `npm run demo:liquidator` → `npm run web`, then open `/demo`
 
 ## Agent skills
 

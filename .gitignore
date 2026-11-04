@@ -1,0 +1,18 @@
+node_modules/
+.DS_Store
+
+# Foundry
+contracts/out/
+contracts/cache/
+contracts/broadcast/
+
+# Next.js
+web/.next/
+web/next-env.d.ts
+
+# Secrets and generated env (never commit)
+.env
+.env.*
+!.env.example
+web/.env.local
+demo/.deployments.json

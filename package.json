@@ -1,0 +1,20 @@
+{
+  "name": "liquidation-shield",
+  "private": true,
+  "workspaces": [
+    "contracts",
+    "packages/shared",
+    "keeper",
+    "demo",
+    "web"
+  ],
+  "scripts": {
+    "build:contracts": "npm run build -w @liquidation-shield/contracts",
+    "test:contracts": "npm test -w @liquidation-shield/contracts",
+    "abis": "npm run build:contracts && npm run abis -w @liquidation-shield/shared",
+    "typecheck": "npm run typecheck --workspaces --if-present"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.3"
+  }
+}
