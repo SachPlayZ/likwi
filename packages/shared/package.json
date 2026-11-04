@@ -10,5 +10,8 @@
   "scripts": {
     "abis": "node scripts/gen-abis.mjs",
     "typecheck": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "viem": "^2.57.16"
   }
 }

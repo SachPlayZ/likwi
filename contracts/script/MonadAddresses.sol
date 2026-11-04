@@ -6,7 +6,7 @@ pragma solidity 0.8.28;
 ///      Re-verify before any mainnet action.
 library MonadAddresses {
     uint256 internal constant CHAIN_ID = 143;
-    uint256 internal constant FORK_CHAIN_ID = 31430;
+    uint256 internal constant TESTNET_CHAIN_ID = 10143;
 
     // Aave V3
     address internal constant POOL_ADDRESSES_PROVIDER = 0x34793Fb9935F7bB5E5aE920fb963F39063E7A615;

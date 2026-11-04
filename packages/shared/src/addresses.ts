@@ -2,8 +2,8 @@
 // Re-verify before any mainnet action.
 
 export const MONAD_CHAIN_ID = 143 as const;
-/** The demo anvil fork. Anything that writes anvil RPC must be gated to this id. */
-export const FORK_CHAIN_ID = 31430 as const;
+/** Monad testnet, where the demo runs (BRIEF §17). Demo writes must be gated to this id. */
+export const TESTNET_CHAIN_ID = 10143 as const;
 
 export const monadAddresses = {
   aave: {
