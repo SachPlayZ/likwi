@@ -12,6 +12,7 @@ If code and BRIEF disagree, flag it to the user; don't silently pick one.
 
 ## Workflow
 
+- **Always pull first, then work.** Run `git pull` before starting any task or creating a branch.
 - Pick a frontier ticket: `gh issue list --label ready-for-agent --state open`, then check that its blockers are closed (see `docs/agents/issue-tracker.md`).
 - One ticket = one branch = one PR. Reference the ticket (`Closes #N`). Don't commit to `main` directly.
 - **Tests first** (`/tdd`). Each ticket lists its tests (numbering follows BRIEF §6.7).
