@@ -98,7 +98,8 @@ struct Config {
   uint16 maxStepBps; uint16 maxSlippageBps;
   bool active; bool unwinding;
 }
-struct Preview { bool protectable; uint256 healthFactor; uint256 repayAmount; uint256 estCollateralSold; }
+enum Action { None, Step, ClearUnwind }
+struct Preview { Action action; uint256 healthFactor; uint256 repayAmount; uint256 estCollateralSold; }
 
 constructor(address addressesProvider, address swapAdapter, uint16 keeperFeeBps, address owner)
 function register(address coll, address debt, uint64 triggerHF, uint64 targetHF, uint16 maxStepBps, uint16 maxSlippageBps)
@@ -112,7 +113,7 @@ function repayBaseForTarget(uint256 coll, uint256 debt, uint256 ltBps, uint256 t
 // admin (Ownable2Step): setSwapAdapter, setKeeperFeeBps (≤50), pause, unpause, rescue
 ```
 
-**Events:** `Registered(user, collateralAsset, debtAsset, triggerHF, targetHF, maxStepBps, maxSlippageBps)`, `Unregistered(user)`, `Protected(user, keeper, hfBefore, hfAfter, debtRepaid, collateralSold, keeperFee)`, `Heartbeat(keeper, blockNumber)`, `SwapAdapterUpdated`, `KeeperFeeUpdated`.
+**Events:** `Registered(user, collateralAsset, debtAsset, triggerHF, targetHF, maxStepBps, maxSlippageBps)`, `Unregistered(user)`, `UnwindComplete(user)`, `Protected(user, keeper, hfBefore, hfAfter, debtRepaid, collateralSold, keeperFee)`, `Heartbeat(keeper, blockNumber)`, `SwapAdapterUpdated`, `KeeperFeeUpdated`.
 
 **Errors:** `InvalidConfig`, `NotRegistered`, `NotProtectable(hf, trigger)`, `NothingToRepay`, `HealthFactorNotImproved(before, after)`, `UnauthorizedFlashLoan`, `ZeroAddress`.
 
@@ -120,7 +121,7 @@ function repayBaseForTarget(uint256 coll, uint256 debt, uint256 ltBps, uint256 t
 
 ### 6.3 Repay sizing (closed form)
 
-From `getUserAccountData` take C = total collateral (base), D = total debt (base), LT = weighted liquidation threshold (bps). Repaying x (base) and selling collateral worth k·x, where k = (10000 + maxSlippageBps + 10 flash buffer) / 10000, gives:
+From `getUserAccountData` take C = total collateral (base), D = total debt (base), LT = weighted liquidation threshold (bps). Repaying x (base) and selling collateral worth k·x, where k = (10000 + maxSlippageBps + premiumBps + keeperFeeBps) / 10000 (`premiumBps` read from `POOL.FLASHLOAN_PREMIUM_TOTAL()`, never hardcoded), gives:
 
 ```
 (C·LT/1e4 − x·k·LT/1e4) / (D − x) = target
@@ -129,12 +130,12 @@ From `getUserAccountData` take C = total collateral (base), D = total debt (base
 
 - If `target·D ≤ C·LT/1e4`, return 0 (already at target).
 - If the denominator ≤ 0 (target unreachable by selling collateral), return D. The step cap bounds it anyway.
-- Clamp to D, then to `D · maxStepBps / 1e4`. Convert to debt-asset units with the oracle price and decimals. Clamp to the user's variable debt token balance.
+- Clamp to D, then to `D · maxStepBps / 1e4`. Convert to debt-asset units with the oracle price and decimals. Clamp to the user's variable debt token balance. Clamp so `maxCollIn` (§6.4) ≤ min(user's collateral aToken balance, allowance to the Shield); a partial step beats none.
 - The formula is exact for single-collateral positions. For multi-collateral ones it is an estimate; the next step corrects the residual. **Document this.**
 
 ### 6.4 `protect(user)` flow
 
-1. `require active`; read account data. Allowed only if **`hf < trigger || (unwinding && hf < target·0.995)`**, else revert `NotProtectable`.
+1. `require active`; read account data. If **`unwinding && hf ≥ target·0.995`**: clear `unwinding`, emit `UnwindComplete`, return `hf` (no revert, no fee). Otherwise allowed only if **`hf < trigger || (unwinding && hf < target·0.995)`**, else revert `NotProtectable`.
 2. Compute `repayAmount` per §6.3. If it's 0, revert `NothingToRepay`.
 3. Set the transient `_activeUser = user`, then call `flashLoanSimple(this, debtAsset, repayAmount, abi.encode(user, msg.sender), 0)`.
 4. **Callback** (`executeOperation`): require `msg.sender == POOL`, `initiator == this` and the decoded user `== _activeUser`.
@@ -175,11 +176,14 @@ Unit tests (MockAave with WETH $3000, LT 82.5%, liquidation bonus 5%; USDC $1; 5
 7. **Shield beats liquidation:** two identical positions, 25% crash. Alice is liquidated (50% close factor, 5% bonus); Bob is shielded. Alice's equity loss is > 5× Bob's. (Reference run: Alice lost ~$476 and Bob ~$64 on a $30k position.)
 8. Revoked approval: `protect` reverts.
 9. Swap cost 3% against the user's 1% cap: reverts.
-10. Paused: preview says not protectable and `protect` reverts.
+10. Paused: preview returns `action == None` and `protect` reverts.
 11. Calling `executeOperation` directly, or as the pool with a foreign initiator, reverts `UnauthorizedFlashLoan`.
 12. Heartbeat emits. Admin functions are owner-only; fee > 50 reverts.
 13. **Fuzz:** `repayBaseForTarget` lands within 0.01% of target for single-collateral positions (coll $1k–$100M, LT 50–95%, HF 0.8–1.5, slippage 10–500 bps).
 14. Uniswap adapter: routes, refunds unused input, holds no balance; path validation and NoRoute.
+15. **Stale unwinding flag:** start an unwind, recover price above target·0.995, dip to between trigger and target. `protect` clears the flag and emits `UnwindComplete`; no step fires.
+16. **Collateral clamp:** allowance (or balance) below the full `maxCollIn` → partial step that still raises HF; zero → `NothingToRepay`.
+17. **k includes fees:** with the swap at the full slippage cap, a step lands at or above target (not below), with the premium read from the pool.
 
 Fork tests (`MONAD_RPC_URL` set; otherwise early-return): real Aave, `deal` WETH/USDC, etch `DemoPriceFeed` over `oracle.getSourceOfAsset(WETH)`. (a) A 15% crash unwinds to within 1% of 1.4 HF, Shield holds no funds. (b) A 25% crash: the unprotected position is liquidated via `liquidationCall`.
 
@@ -190,14 +194,16 @@ Fork tests (`MONAD_RPC_URL` set; otherwise early-return): real Aave, `deal` WETH
 - `config.ts`: parse and validate env. Fail fast with a clear message.
 - `registry.ts`: `class UserRegistry { sync(toBlock): Promise<void>; users(): Address[] }`. Backfills `Registered`/`Unregistered` logs from `DEPLOY_BLOCK` in chunks of `LOG_CHUNK`, then incrementally each block. Optional `USERS` env pins a static list.
 - `executor.ts`: `class Executor { maybeProtect(user, preview): Promise<void>; heartbeat(): Promise<void> }`. One in-flight tx per user. `simulateContract` before `writeContract`. viem `nonceManager`. Never throws out of the loop; it logs and counts failures instead.
-- `loop.ts`: subscribes to new blocks (WebSocket if `WS_URL` is set, else polling at 200ms). **Skips a tick if the previous one is still running** (no overlap). Per tick: sync the registry → `previewProtect` for all users (bounded concurrency) → `maybeProtect` the protectable ones → heartbeat every `HEARTBEAT_EVERY_BLOCKS`.
-- `status.ts`: `node:http` with CORS. `GET /health` returns `{ok, lastBlock, lastTickMs, lagBlocks}`; `GET /status` returns `{users:[{user, hf, protectable, unwinding, lastTx, lastError}], stats:{protects, failures, heartbeats}}`.
+- `loop.ts`: subscribes to new blocks (WebSocket if `WS_URL` is set, else polling at 200ms). **Skips a tick if the previous one is still running** (no overlap). Per tick: sync the registry → `previewProtect` for all users (bounded concurrency) → `maybeProtect` those with `action != None` → heartbeat every `HEARTBEAT_EVERY_BLOCKS`.
+- `status.ts`: `node:http` with CORS. `GET /health` returns `{ok, lastBlock, lastTickMs, lagBlocks}`; `GET /status` returns `{users:[{user, hf, action, unwinding, lastTx, lastError}], stats:{protects, failures, heartbeats}}`.
 - `log.ts`: one-line JSON logger.
 - Graceful shutdown on SIGINT/SIGTERM.
 
 **Env:** `RPC_URL`, `WS_URL?`, `CHAIN=monad|fork`, `KEEPER_PRIVATE_KEY`, `SHIELD_ADDRESS`, `DEPLOY_BLOCK`, `HEARTBEAT_EVERY_BLOCKS=10`, `LOG_CHUNK=1000`, `CONCURRENCY=16`, `STATUS_PORT=8787`, `USERS?`, `DRY_RUN=false`.
 
-**Tests:** for pure logic, use vitest with a stubbed public client (tick overlap guard, one in-flight tx per user, heartbeat cadence, registry dedup on Registered → Unregistered → Registered). End-to-end runs against anvil in the demo.
+**Rewind handling:** if the block number goes backwards (`anvil_revert`), reset the nonce manager, in-flight map and registry cursor. **Flag clears:** when `previewProtect` returns `ClearUnwind`, send `protect` (no fee earned).
+
+**Tests:** for pure logic, use vitest with a stubbed public client (tick overlap guard, one in-flight tx per user, heartbeat cadence, registry dedup on Registered → Unregistered → Registered, state reset on block-number rewind, ClearUnwind dispatch). End-to-end runs against anvil in the demo.
 
 ## 8. Web app (`/web`)
 
@@ -209,20 +215,22 @@ Fork tests (`MONAD_RPC_URL` set; otherwise early-return): real Aave, `deal` WETH
    - **Position card:** collateral $, debt $, HF gauge with the 1.0 line and the trigger/target markers.
    - **Shield form:** collateral/debt selects (from the shared asset list), trigger, target, max step %, max slippage %, with inline validation that mirrors the contract bounds. A two-step CTA: _Approve aWETH_ → _Activate Shield_. Unregister and revoke-approval buttons.
    - **Activity:** `Protected` events for this user (HF before → after, debt repaid, collateral sold, tx link).
-   - **Status badge:** "Shield active · last check 0.4s ago", from the latest `Heartbeat` (falling back to the keeper's `/health`).
-2. **`/demo` (the hackathon screen):**
+   - **Status badge:** "Shield active · last check 0.4s ago", from the latest `Heartbeat` whose `keeper == NEXT_PUBLIC_KEEPER_ADDRESS` (falling back to the keeper's `/health`). Ignore heartbeats from other addresses.
+   - **Approval:** unlimited aWETH approval, with a prominent revoke button. Default max slippage 1%.
+   - **Fork faucet (chain 31430 only):** "Fund 10 WETH + open sample loan" button (`anvil_setStorageAt` + supply/borrow to HF 1.30).
+2. **`/demo` (the hackathon screen):** wallet-free. Reads via a public client, writes via anvil RPC / test-client calls.
    - Two cards side by side, **Unprotected** vs **Shielded**. Same starting loan (e.g. 20 WETH collateral at HF 1.30).
    - A **live HF chart** with both lines, one point per block, a red line at 1.0 and dashed lines at trigger and target.
-   - A **Crash price** button (−5% / −15% / −25%, plus "slow crash": −2% per second for 10 seconds). It calls anvil RPC directly (`anvil_setStorageAt` on the etched feed). Only enabled on chain 31430.
+   - A **Crash price** control. Primary: **slow crash**, −3% per second for 10 seconds (compounding, about −26%). Secondary: instant −5% / −15% / −25%. It calls anvil RPC directly (`anvil_setStorageAt` on the etched feed). Only enabled on chain 31430.
    - An event ticker: liquidation (red) and each protection step (green).
-   - **A big "$ saved" number** = unprotected loss − shielded loss, both computed as the change in equity (collateral − debt + wallet balances) at the oracle price.
-   - A Reset button that calls `anvil_revert` to a snapshot taken at setup.
+   - **A big "$ saved" number** = Alice's liquidation penalty (bonus seized) − Bob's costs (swap cost + flash premium + keeper fees), at the oracle price. Secondary, smaller stat: the equity-change difference (collateral − debt + wallet balances).
+   - A Reset button: `anvil_revert` to the setup snapshot, then immediately take a new `evm_snapshot` (revert consumes it), and clear the chart.
 
 **Data:** read the chain directly with viem/wagmi, refetching on every new block. Configure addresses through `NEXT_PUBLIC_SHIELD_ADDRESS`, `NEXT_PUBLIC_CHAIN`, `NEXT_PUBLIC_KEEPER_URL`, `NEXT_PUBLIC_DEMO_FEED`, `NEXT_PUBLIC_DEMO_ALICE/BOB`, written by `demo:setup`.
 
 ## 9. Demo tooling (`/demo`, `/scripts`)
 
-- `scripts/fork.sh`: `anvil --fork-url $MONAD_RPC_URL --chain-id 31430 --block-time 1` (anvil's block time is in whole seconds; mention that real Monad is ~0.4s on the slide) plus `--steps-tracing` off and a generous `--gas-limit`.
+- `scripts/fork.sh`: `anvil --fork-url $MONAD_RPC_URL --chain-id 31430 --block-time 0.4` (anvil 1.5+ accepts fractional seconds, matching Monad) plus `--steps-tracing` off and a generous `--gas-limit`.
 - `demo setup` (TypeScript + viem test client):
   1. Deploy the Shield with `OracleSwapAdapter`. Fund the adapter with USDC.
   2. Accounts: anvil #0 = deployer/keeper, #1 = Alice (unprotected), #2 = Bob (shielded), #3 = liquidator.
@@ -230,8 +238,8 @@ Fork tests (`MONAD_RPC_URL` set; otherwise early-return): real Aave, `deal` WETH
   4. Alice and Bob each supply 20 WETH and borrow USDC to HF 1.30. Bob registers (trigger 1.15, target 1.40, step 25%, slippage 1%) and approves aWETH.
   5. Etch `DemoPriceFeed` runtime bytecode over `AaveOracle.getSourceOfAsset(WETH)`. Write the current price into slot 0.
   6. Take an `evm_snapshot`. Write `web/.env.local` and `demo/.deployments.json`.
-- `demo crash --pct 15 [--slow]`: the CLI equivalent of the UI button.
-- `demo liquidator`: a bot that watches Alice and calls `liquidationCall(WETH, USDC, alice, max, false)` once HF < 1. It plays the "real world" for the unprotected side.
+- `demo crash --pct 15 [--slow]`: the CLI equivalent of the UI button (`--slow` = −3%/s for 10s).
+- `demo liquidator`: a bot that watches Alice and calls `liquidationCall(WETH, USDC, alice, max, false)` once HF < 1. Resets its nonce on block-number rewind. It plays the "real world" for the unprotected side.
 - **Run order on demo day:** `npm run fork` → `npm run demo:setup` → `npm run keeper` → `npm run demo:liquidator` → `npm run web` → open `/demo`.
 
 ## 10. Verified addresses (Monad mainnet, chain id 143)
@@ -265,8 +273,8 @@ The other Aave Monad reserves are cbBTC, wstETH, weETH, USDe, sUSDe, mUSD, AUSD,
 Each slice is demoable on its own. **Stop wherever time runs out; slice 4 is the minimum viable demo.**
 
 1. **Foundations:** monorepo (npm workspaces: `contracts`, `packages/shared`, `keeper`, `demo`, `web`), Foundry setup, `MonadAddresses.sol`, interfaces, MockAave, and an ABI codegen script (`forge out` → `packages/shared/src/generated.ts`). _AC:_ `forge build` passes; `npm run abis` writes typed ABIs.
-2. **Core Shield, single step:** register/unregister, `repayBaseForTarget`, `protect` with the flash loan and OracleSwapAdapter. Unit tests 1–4, 8–13. _AC:_ all green; the "Shield holds nothing" invariant holds.
-3. **Gradual unwind:** the `unwinding` flag, the 0.5% target tolerance, `previewProtect`. Tests 5–7. _AC:_ a multi-step unwind lands within 1% of target.
+2. **Core Shield, single step:** register/unregister, `repayBaseForTarget`, `protect` with the flash loan and OracleSwapAdapter. Unit tests 1–4, 8–13, 16–17. _AC:_ all green; the "Shield holds nothing" invariant holds.
+3. **Gradual unwind:** the `unwinding` flag (incl. `ClearUnwind`), the 0.5% target tolerance, `previewProtect`. Tests 5–7, 15. _AC:_ a multi-step unwind lands within 1% of target.
 4. **Fork demo backbone:** `fork.sh`, `demo setup`, `demo crash`, `demo liquidator`, plus a minimal keeper (poll each block → preview → protect). _AC:_ in a terminal, a crash liquidates Alice and Bob unwinds over a few blocks; the logs show both.
 5. **Demo UI:** the `/demo` page with two cards, live HF chart, crash button, ticker and $ saved. _AC:_ the full 2-minute script in §12 runs from the browser.
 6. **Keeper hardening:** registry backfill, in-flight dedup, overlap guard, heartbeat, `/health` + `/status`, graceful shutdown. _AC:_ the vitest unit tests pass; the UI badge shows the heartbeat.
@@ -277,14 +285,16 @@ Each slice is demoable on its own. **Stop wherever time runs out; slice 4 is the
 ## 12. Demo script (about 2 minutes)
 
 1. "Two identical $X loans on Aave on Monad. The right one has Liquidation Shield, which checks it every block." Point at the heartbeat badge.
-2. Click **Crash −25%** (or slow crash). Both HF lines drop.
+2. Click **Slow crash** (−3%/s). Both HF lines drop. Line: "The Shield acts before HF hits 1."
 3. The left loan crosses 1.0 and the liquidator bot seizes collateral; the penalty shows in red. The right loan steps down over a few blocks (green ticks) and levels off at 1.40.
 4. Point at **"Shield saved $X."**
-5. "Checking every block costs fractions of a cent on Monad. On Ethereum, that would cost a fortune."
+5. "Checking every block costs fractions of a cent on Monad. On Ethereum, that would cost a fortune." (The fork runs at Monad's real 0.4s block time.)
 
-**Q&A answers to keep ready:** if the bot is down, `protect` is permissionless and the heartbeat makes uptime public. The Shield can't steal funds: it acts only below the user's own trigger, only up to their target and slippage, and never holds funds. A slow oracle hits liquidators equally; an early trigger and gradual steps give a buffer. Versus DeFi Saver: same idea, but it isn't on Monad, and per-block checking only makes economic sense on a fast, cheap chain.
+**Q&A answers to keep ready:** if the bot is down, `protect` is permissionless and the heartbeat makes uptime public. The Shield can't steal funds: it acts only below the user's own trigger, only up to their target and slippage, and never holds funds. Even a malicious owner-set swap adapter can take at most `maxSlippageBps` per step, and only below the trigger; `pause` is the owner's other power (it leaves users unprotected). A slow oracle hits liquidators equally; an early trigger and gradual steps give a buffer. Versus DeFi Saver: same idea, but it isn't on Monad, and per-block checking only makes economic sense on a fast, cheap chain.
 
 ## 13. Open questions (the only things to interview about)
+
+> Keeper fee and configs-per-user are resolved in §16. The Uniswap pool question stays open for slice 8; the hosted keeper stays out of scope.
 
 - Keeper fee default (10 bps?) and whether to have a protocol fee recipient at all.
 - Whether WETH/USDC on Uniswap V3 Monad has enough liquidity at fee 500 vs 3000, or whether to route through WMON (affects slice 8 only).
@@ -300,4 +310,36 @@ Audits, a mainnet deployment with real funds, governance or a token, a keeper ne
 - `forge test` is green, including the fuzz test. The fork tests pass when `MONAD_RPC_URL` is set.
 - One command sequence (§9) brings up the full demo on a laptop.
 - `/demo` runs the §12 script with no terminal interaction after start.
-- The README covers the architecture diagram, run steps, the safety model (§5.4–5.5, §6.4), and the "why Monad" paragraph.
+- The README covers the architecture diagram, run steps, the safety model (§5.4–5.5, §6.4, plus owner powers and the MEV bound from §16), and the "why Monad" paragraph.
+
+## 16. Grilling decisions (final, folded into the sections above)
+
+Settled on 2026-11-04 by grilling §6–§8 and §13. The sections above already reflect them; this list is the summary.
+
+**Contracts**
+
+1. **k includes fees:** k = 1 + slippage + flash premium + keeper fee. The premium is read from `POOL.FLASHLOAN_PREMIUM_TOTAL()`. If swaps cost less than the cap, HF overshoots target slightly, which is safe. (§6.3)
+2. **Stale unwinding flag:** if `unwinding && hf ≥ target·0.995`, `protect` clears the flag, emits `UnwindComplete`, and returns without reverting and without a fee. Otherwise a later dip between trigger and target would trigger a step above the user's trigger. (§6.4, test 15)
+3. **`Preview.action`** is an enum `None | Step | ClearUnwind`, replacing `bool protectable`. (§6.2)
+4. **Collateral clamp:** the repay shrinks so `maxCollIn` ≤ min(aToken balance, allowance). If it would be 0, revert `NothingToRepay`. (§6.3, test 16)
+5. **No minimum step size.** The 0.5% target band stops dust steps.
+6. **Fees:** the keeper fee defaults to 10 bps (max 50), paid to `msg.sender`. There is no protocol fee recipient.
+7. **One config per user**, because Aave health is account-wide.
+8. **MEV:** permissionless `protect` plus a sandwichable Uniswap swap means the loss per step is bounded by `maxSlippageBps`. This is accepted and documented, and the UI defaults slippage to 1%. MEV protection remains a non-goal.
+9. **Owner trust:** no timelock. A malicious adapter can take at most the slippage cap per step, and only below the trigger. `pause` leaves users unprotected. Both go in the README.
+
+**Keeper**
+
+10. **Heartbeats:** the UI only trusts those from `NEXT_PUBLIC_KEEPER_ADDRESS`, because `heartbeat()` is permissionless.
+11. **Flag clears:** the keeper dispatches `ClearUnwind` calls (no fee).
+12. **Rewind:** if the block number goes backwards, the keeper and liquidator reset their nonce manager, in-flight map and registry cursor. This is covered by a vitest case.
+
+**Demo and web**
+
+13. **Block time:** the fork runs at `anvil --block-time 0.4`, Monad's real block time. Verified on anvil 1.5.1.
+14. **Main crash path:** slow crash at −3%/s for 10s (compounding, about −26%). At −2%/s, Alice (HF 1.30) never hits 1.0. Instant crashes are secondary. An instant −25% puts Bob at HF ~0.975, liquidatable in the same block, so the stage line is "Shield acts before HF hits 1."
+15. **"$ saved"** = Alice's liquidation penalty − Bob's costs (swap + premium + keeper fees). The equity difference is a secondary stat, because it also counts market exposure Bob avoided by de-risking early.
+16. **Reset:** `anvil_revert`, then a fresh `evm_snapshot` (a revert consumes the snapshot), then clear the chart.
+17. **`/demo` is wallet-free:** no MetaMask, so no stale-nonce errors after a revert.
+18. **`/` has a fork-only faucet:** "Fund 10 WETH + open sample loan", so slice 7's acceptance criterion is reachable.
+19. **Approval:** unlimited aWETH approval with a prominent revoke button.
