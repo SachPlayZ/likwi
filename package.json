@@ -18,7 +18,9 @@
     "demo:crash": "node --env-file-if-exists=.env --import tsx demo/src/bin/crash.ts",
     "demo:liquidator": "node --env-file-if-exists=.env --import tsx demo/src/bin/liquidator.ts",
     "keeper": "npm start -w @liquidation-shield/keeper",
-    "test:keeper": "npm test -w @liquidation-shield/keeper"
+    "test:keeper": "npm test -w @liquidation-shield/keeper",
+    "web": "npm run dev -w @liquidation-shield/web",
+    "web:build": "npm run build -w @liquidation-shield/web"
   },
   "devDependencies": {
     "@types/node": "^22.20.5",
