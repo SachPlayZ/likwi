@@ -8,5 +8,8 @@
   "dependencies": {
     "@liquidation-shield/shared": "*",
     "viem": "^2.57.16"
+  },
+  "exports": {
+    ".": "./src/index.ts"
   }
 }
