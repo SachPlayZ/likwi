@@ -84,12 +84,3 @@ export function HeartbeatBadge({ heartbeat, head, blockTime }: { heartbeat?: Hea
     </a>
   );
 }
-
-export function ShieldIcon() {
-  return (
-    <svg width="20" height="22" viewBox="0 0 20 22" fill="none">
-      <path d="M10 1 2 4v6c0 5 3.4 9.4 8 11 4.6-1.6 8-6 8-11V4l-8-3Z" fill="#0b0716" />
-      <path d="m6 11 3 3 5-6" stroke="#b3a6ff" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" />
-    </svg>
-  );
-}

@@ -19,7 +19,8 @@ import {
 import { client, useDemoState, type DemoState } from "@/lib/feed";
 import { DEFAULT_FORM, formFromConfig, validateShieldForm, type ShieldForm } from "@/lib/shieldForm";
 import { wagmiConfig } from "@/lib/wagmi";
-import { HeartbeatBadge, ShieldIcon, useHeartbeat } from "@/components/common";
+import { LogoMark } from "@/components/landing/Logo";
+import { HeartbeatBadge, useHeartbeat } from "@/components/common";
 
 const WAD = 1e18;
 const BASE = 1e8; // Aave base currency: USD, 8 decimals
@@ -60,9 +61,9 @@ export function ProductScreen() {
     <main className="demo product">
       <header className="topbar">
         <div className="brand">
-          <div className="brand-mark" aria-hidden>
-            <ShieldIcon />
-          </div>
+          <Link href="/" className="brand-mark" aria-label="Home">
+            <LogoMark />
+          </Link>
           <div>
             <h1>Liquidation Shield</h1>
             <p className="eyebrow">Per-block protection · Aave V3-compatible test pool</p>
