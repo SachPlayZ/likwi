@@ -1,6 +1,7 @@
 "use client";
 // The hackathon screen (BRIEF §8, §12): Alice (unprotected) vs Bob (shielded), live on Monad testnet.
 import { useMemo, useState } from "react";
+import Link from "next/link";
 import { CartesianGrid, Line, LineChart, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { explorerAddressUrl, explorerTxUrl, TESTNET_CHAIN_ID } from "@liquidation-shield/shared";
 import {
@@ -16,7 +17,8 @@ import {
   type TickerEvent,
   type Totals,
 } from "@/lib/feed";
-import { HeartbeatBadge, ShieldIcon } from "@/components/common";
+import { LogoMark } from "@/components/landing/Logo";
+import { HeartbeatBadge } from "@/components/common";
 
 const usd = (n: number, digits = 0) =>
   n.toLocaleString("en-US", { style: "currency", currency: "USD", minimumFractionDigits: digits, maximumFractionDigits: digits });
@@ -63,9 +65,9 @@ export function DemoScreen() {
     <main className="demo">
       <header className="topbar">
         <div className="brand">
-          <div className="brand-mark" aria-hidden>
-            <ShieldIcon />
-          </div>
+          <Link href="/" className="brand-mark" aria-label="Home">
+            <LogoMark />
+          </Link>
           <div>
             <h1>Liquidation Shield</h1>
             <p className="eyebrow">Per-block protection · Aave V3-compatible test pool</p>

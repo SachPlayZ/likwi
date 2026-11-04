@@ -1,15 +1,15 @@
-/* Mission control: near-black with a violet cast, Monad purple accent, big tabular numerals.
+/* Mission control: pure black and white, sketchy ink, big tabular numerals.
    Sized for a projector: nothing important below 16px, key numbers far larger. */
 :root {
-  --bg: #07060c;
-  --panel: #0e0c16;
-  --panel-2: #141120;
-  --line: #262038;
-  --text: #f3f0ff;
-  --muted: #9890b4;
-  --dim: #5f5878;
-  --purple: #836ef9;
-  --purple-hi: #b3a6ff;
+  --bg: #000;
+  --panel: #0a0a0a;
+  --panel-2: #141414;
+  --line: #2a2a2a;
+  --text: #fff;
+  --muted: #8a8a8a;
+  --dim: #5a5a5a;
+  --purple: #fff;
+  --purple-hi: #fff;
   --red: #ff4d63;
   --coral: #ff9466;
   --green: #2ee6a6;
@@ -35,7 +35,7 @@ body {
 body {
   min-height: 100vh;
   background-image:
-    radial-gradient(1200px 600px at 50% -200px, rgba(131, 110, 249, 0.16), transparent 70%),
+    radial-gradient(1200px 600px at 50% -200px, rgba(255, 255, 255, 0.06), transparent 70%),
     linear-gradient(rgba(255, 255, 255, 0.025) 1px, transparent 1px),
     linear-gradient(90deg, rgba(255, 255, 255, 0.025) 1px, transparent 1px);
   background-size: auto, 48px 48px, 48px 48px;
@@ -95,7 +95,7 @@ a {
   background: var(--purple);
   border-color: var(--purple);
   color: #0b0716;
-  box-shadow: 0 0 32px rgba(131, 110, 249, 0.45);
+  box-shadow: 0 0 32px rgba(255, 255, 255, 0.45);
 }
 .btn-primary:hover:not(:disabled) {
   background: var(--purple-hi);
@@ -146,14 +146,18 @@ a {
 .brand-mark {
   width: 38px;
   height: 38px;
-  border-radius: 10px;
-  background: conic-gradient(from 210deg, var(--purple), #5b45e0, var(--purple-hi), var(--purple));
-  box-shadow: 0 0 24px rgba(131, 110, 249, 0.6);
   display: grid;
   place-items: center;
+  color: var(--text);
+}
+.brand-mark svg {
+  width: 100%;
+  height: 100%;
 }
 .brand h1 {
-  font-size: 1.35rem;
+  font-family: var(--font-serif), serif;
+  font-weight: 400;
+  font-size: 1.7rem;
   margin: 0;
   letter-spacing: 0.02em;
 }
@@ -177,7 +181,7 @@ a {
   white-space: nowrap;
 }
 .badge-testnet {
-  border-color: rgba(131, 110, 249, 0.6);
+  border-color: rgba(255, 255, 255, 0.6);
   color: var(--purple-hi);
 }
 .dot {
@@ -302,9 +306,9 @@ a {
   justify-items: center;
   text-align: center;
   gap: 6px;
-  border-color: rgba(131, 110, 249, 0.55);
+  border-color: rgba(255, 255, 255, 0.55);
   background:
-    radial-gradient(420px 220px at 50% 0%, rgba(131, 110, 249, 0.25), transparent 70%),
+    radial-gradient(420px 220px at 50% 0%, rgba(255, 255, 255, 0.25), transparent 70%),
     linear-gradient(180deg, var(--panel-2), var(--panel));
 }
 .saved-value {
@@ -714,7 +718,7 @@ a {
 .field select:focus {
   outline: none;
   border-color: var(--purple);
-  box-shadow: 0 0 0 3px rgba(131, 110, 249, 0.25);
+  box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.25);
 }
 .field.invalid input,
 .field.invalid select {
@@ -805,4 +809,24 @@ a {
   .intro {
     padding: 20px;
   }
+}
+
+/* sketchy ink: serif headings, hand-drawn panel edges, film grain */
+h2,
+h3 {
+  font-family: var(--font-serif), serif;
+  font-weight: 400;
+}
+.panel,
+.card {
+  border-radius: 6px 14px 8px 12px / 12px 6px 14px 8px;
+}
+body::after {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 100;
+  opacity: 0.06;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='160' height='160'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/></filter><rect width='100%' height='100%' filter='url(%23n)'/></svg>");
 }
