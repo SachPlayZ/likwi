@@ -29,7 +29,7 @@ export type Context = {
   operator: Wallet;
   walletFor: (account: Account) => Wallet;
   /** Called for every confirmed tx (the web operator routes feed their event ticker with it). */
-  onTx?: (tx: { label: string; hash: Hex; block: bigint }) => void;
+  onTx?: (tx: { label: string; hash: Hex; block: bigint; index: number }) => void;
 };
 
 // Repo root: REPO_ROOT (set by the web server) or relative to this file. No `new URL(literal, import.meta.url)`,
@@ -73,7 +73,7 @@ export async function confirm(ctx: Context, label: string, hash: Promise<Hex> | 
   const receipt = await ctx.client.waitForTransactionReceipt({ hash: h });
   if (receipt.status !== "success") throw new Error(`${label} reverted: ${explorerTxUrl(h)}`);
   console.log(`✓ ${label.padEnd(34)} ${explorerTxUrl(h)}`);
-  ctx.onTx?.({ label, hash: h, block: receipt.blockNumber });
+  ctx.onTx?.({ label, hash: h, block: receipt.blockNumber, index: receipt.transactionIndex });
   return h;
 }
 

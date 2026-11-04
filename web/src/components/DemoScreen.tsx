@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { CartesianGrid, Line, LineChart, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { explorerAddressUrl, explorerTxUrl, TESTNET_CHAIN_ID } from "@liquidation-shield/shared";
 import {
+  deriveTicker,
   operatorEvents,
   postAction,
   useBlockFeed,
@@ -25,13 +26,15 @@ export function DemoScreen() {
   const state = useDemoState();
   const s = state.data;
   const { snap, points, blockTime } = useBlockFeed(s);
-  const { events, totals, heartbeat, head } = useLogFeed(s);
+  const { events, heartbeat, head } = useLogFeed(s);
   const [actionError, setActionError] = useState<string>();
 
-  const ticker = useMemo(
-    () => [...events, ...operatorEvents(s)].sort((a, b) => (a.block === b.block ? 0 : a.block > b.block ? -1 : 1)),
-    [events, s],
-  );
+  const { ticker, totals } = useMemo(() => {
+    const { lines, totals } = deriveTicker(events, s?.txs ?? []);
+    // Newest first. Inputs are chronological, so reverse before the (stable) sort keeps same-block order newest first too.
+    const ticker = [...lines, ...operatorEvents(s)].reverse().sort((a, b) => (a.block === b.block ? 0 : a.block > b.block ? -1 : 1));
+    return { ticker, totals };
+  }, [events, s]);
 
   const act = (path: "reset" | "crash", body?: object) => {
     setActionError(undefined);

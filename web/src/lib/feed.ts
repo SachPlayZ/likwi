@@ -197,15 +197,28 @@ export type TickerKind = "liquidation" | "step" | "unwound" | "price" | "reset";
 export type TickerEvent = { id: string; kind: TickerKind; block: bigint; hash: Hex; text: string };
 
 export type Totals = {
-  penaltyUsd: number; // Alice: collateral seized − debt covered, at the oracle price of that block
+  penaltyUsd: number; // Alice: collateral seized − debt covered, at the price the pool used
   shieldCostUsd: number; // Bob: collateral sold − debt repaid (swap + flash premium + keeper fee)
   liquidations: number;
   steps: number;
 };
 
+/** A chain event with raw amounts. Dollar values are derived at render time (see `deriveTicker`). */
+type ChainEvent = {
+  id: string;
+  hash: Hex;
+  block: bigint;
+  index: number; // tx index in the block
+  fallbackPrice: number; // tWETH price at the end of the block, if no operator tx places it more precisely
+} & (
+  | { kind: "liquidation"; seized: number; covered: number }
+  | { kind: "step"; hfBefore: number; hfAfter: number; sold: number; repaid: number }
+  | { kind: "unwound" }
+);
+
 const transferEvent = parseAbiItem("event Transfer(address indexed from, address indexed to, uint256 value)");
 
-async function priceAt(s: DemoState, block: bigint): Promise<number> {
+async function blockPrice(s: DemoState, block: bigint): Promise<number> {
   const p = await client.readContract({
     address: s.oracle,
     abi: testnetOracleAbi,
@@ -216,13 +229,50 @@ async function priceAt(s: DemoState, block: bigint): Promise<number> {
   return Number(p) / BASE;
 }
 
+/**
+ * tWETH price in force at (block, index): the last operator price tx before it. A crash tick can land in the
+ * same block, after a liquidation or Step, so the block's end price would misvalue it.
+ */
+function priceAt(txs: OperatorTx[], e: ChainEvent): number {
+  let p: number | undefined;
+  for (const t of txs) {
+    if (t.price === undefined) continue;
+    const b = BigInt(t.block);
+    if (b < e.block || (b === e.block && t.index < e.index)) p = t.price;
+  }
+  return p ?? e.fallbackPrice;
+}
+
 const fmtUsd = (n: number) => n.toLocaleString("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 });
 const fmtAmt = (n: number, d = 2) => n.toLocaleString("en-US", { maximumFractionDigits: d });
 
+/** Ticker lines and the "$ saved" inputs for the chain events, valued at the operator's price timeline. */
+export function deriveTicker(events: ChainEvent[], txs: OperatorTx[]): { lines: TickerEvent[]; totals: Totals } {
+  const totals: Totals = { penaltyUsd: 0, shieldCostUsd: 0, liquidations: 0, steps: 0 };
+  const lines = events.map((e): TickerEvent => {
+    const base = { id: e.id, kind: e.kind, block: e.block, hash: e.hash };
+    if (e.kind === "liquidation") {
+      const pen = e.seized * priceAt(txs, e) - e.covered;
+      totals.penaltyUsd += pen;
+      totals.liquidations++;
+      return { ...base, text: `LIQUIDATED · Alice lost ${fmtAmt(e.seized, 3)} tWETH for ${fmtAmt(e.covered, 0)} tUSDC of debt · penalty ${fmtUsd(pen)}` };
+    }
+    if (e.kind === "step") {
+      totals.shieldCostUsd += e.sold * priceAt(txs, e) - e.repaid;
+      totals.steps++;
+      return {
+        ...base,
+        text: `Shield Step · Bob HF ${e.hfBefore.toFixed(3)} → ${e.hfAfter.toFixed(3)} · repaid ${fmtAmt(e.repaid, 0)} tUSDC, sold ${fmtAmt(e.sold, 3)} tWETH`,
+      };
+    }
+    return { ...base, text: "Unwind complete · Bob back at target HF" };
+  });
+  return { lines, totals };
+}
+
 /** Chain events for the current run (Steps, Alice's liquidation) and the official keeper's last heartbeat. */
 export function useLogFeed(s: DemoState | undefined) {
-  const [events, setEvents] = useState<TickerEvent[]>([]);
-  const [totals, setTotals] = useState<Totals>({ penaltyUsd: 0, shieldCostUsd: 0, liquidations: 0, steps: 0 });
+  const [events, setEvents] = useState<ChainEvent[]>([]);
   const [heartbeat, setHeartbeat] = useState<{ block: bigint; hash: Hex }>();
   const [head, setHead] = useState<bigint>();
   const run = s?.run;
@@ -230,7 +280,6 @@ export function useLogFeed(s: DemoState | undefined) {
   useEffect(() => {
     if (!s || !run) return;
     setEvents([]);
-    setTotals({ penaltyUsd: 0, shieldCostUsd: 0, liquidations: 0, steps: 0 });
     let cursor: bigint | undefined;
     let polling = false;
     let stopped = false;
@@ -261,7 +310,13 @@ export function useLogFeed(s: DemoState | undefined) {
           if (stopped) return;
           await ingest(
             parseEventLogs({ abi: liquidationShieldAbi, logs: shieldRaw }),
-            burns.map((b) => ({ token: b.address, block: b.blockNumber!, hash: b.transactionHash!, value: b.args.value ?? 0n })),
+            burns.map((b) => ({
+              token: b.address,
+              block: b.blockNumber!,
+              index: b.transactionIndex!,
+              hash: b.transactionHash!,
+              value: b.args.value ?? 0n,
+            })),
           );
           next = toBlock + 1n;
           cursor = next;
@@ -274,77 +329,53 @@ export function useLogFeed(s: DemoState | undefined) {
     };
 
     type ShieldLog = ReturnType<typeof parseEventLogs<typeof liquidationShieldAbi>>[number];
-    type BurnLog = { token: Address; block: bigint; hash: Hex; value: bigint };
+    type BurnLog = { token: Address; block: bigint; index: number; hash: Hex; value: bigint };
 
     const ingest = async (shieldLogs: ShieldLog[], burns: BurnLog[]) => {
-      const out: TickerEvent[] = [];
-      let penalty = 0;
-      let cost = 0;
-      let liquidations = 0;
-      let steps = 0;
-
+      const out: ChainEvent[] = [];
       for (const l of shieldLogs) {
+        const at = { id: `${l.transactionHash}-${l.logIndex}`, hash: l.transactionHash, block: l.blockNumber, index: l.transactionIndex };
         if (l.eventName === "Heartbeat" && l.args.keeper.toLowerCase() === keeper) {
           setHeartbeat((h) => (!h || l.blockNumber > h.block ? { block: l.blockNumber, hash: l.transactionHash } : h));
         } else if (l.eventName === "Protected" && l.args.user.toLowerCase() === bob) {
           const { hfBefore, hfAfter, debtRepaid, collateralSold } = l.args;
-          const p = await priceAt(s, l.blockNumber);
-          const sold = Number(collateralSold) / 1e18;
-          const repaid = Number(debtRepaid) / 1e6;
-          cost += sold * p - repaid;
-          steps++;
           out.push({
-            id: `${l.transactionHash}-${l.logIndex}`,
+            ...at,
             kind: "step",
-            block: l.blockNumber,
-            hash: l.transactionHash,
-            text: `Shield Step · Bob HF ${(Number(hfBefore) / WAD).toFixed(3)} → ${(Number(hfAfter) / WAD).toFixed(3)} · repaid ${fmtAmt(repaid, 0)} tUSDC, sold ${fmtAmt(sold, 3)} tWETH`,
+            fallbackPrice: await blockPrice(s, l.blockNumber),
+            hfBefore: Number(hfBefore) / WAD,
+            hfAfter: Number(hfAfter) / WAD,
+            sold: Number(collateralSold) / 1e18,
+            repaid: Number(debtRepaid) / 1e6,
           });
         } else if (l.eventName === "UnwindComplete" && l.args.user.toLowerCase() === bob) {
-          out.push({
-            id: `${l.transactionHash}-${l.logIndex}`,
-            kind: "unwound",
-            block: l.blockNumber,
-            hash: l.transactionHash,
-            text: "Unwind complete · Bob back at target HF",
-          });
+          out.push({ ...at, kind: "unwound", fallbackPrice: 0 });
         }
       }
 
       // A liquidation burns Alice's atWETH (seized) and variable debt (covered) in one tx.
-      const byTx = new Map<Hex, { block: bigint; seized: bigint; covered: bigint }>();
+      const byTx = new Map<Hex, { block: bigint; index: number; seized: bigint; covered: bigint }>();
       for (const b of burns) {
-        const e = byTx.get(b.hash) ?? { block: b.block, seized: 0n, covered: 0n };
+        const e = byTx.get(b.hash) ?? { block: b.block, index: b.index, seized: 0n, covered: 0n };
         if (b.token.toLowerCase() === s.aWeth.toLowerCase()) e.seized += b.value;
         else e.covered += b.value;
         byTx.set(b.hash, e);
       }
       for (const [hash, e] of byTx) {
         if (e.seized === 0n || e.covered === 0n) continue; // not a liquidation
-        const p = await priceAt(s, e.block);
-        const seized = Number(e.seized) / 1e18;
-        const covered = Number(e.covered) / 1e6;
-        const pen = seized * p - covered;
-        penalty += pen;
-        liquidations++;
         out.push({
           id: hash,
-          kind: "liquidation",
-          block: e.block,
           hash,
-          text: `LIQUIDATED · Alice lost ${fmtAmt(seized, 3)} tWETH for ${fmtAmt(covered, 0)} tUSDC of debt · penalty ${fmtUsd(pen)}`,
+          block: e.block,
+          index: e.index,
+          kind: "liquidation",
+          fallbackPrice: await blockPrice(s, e.block),
+          seized: Number(e.seized) / 1e18,
+          covered: Number(e.covered) / 1e6,
         });
       }
 
       if (out.length) setEvents((ev) => [...ev, ...out]);
-      if (steps || liquidations) {
-        setTotals((t) => ({
-          penaltyUsd: t.penaltyUsd + penalty,
-          shieldCostUsd: t.shieldCostUsd + cost,
-          liquidations: t.liquidations + liquidations,
-          steps: t.steps + steps,
-        }));
-      }
     };
 
     void poll();
@@ -356,7 +387,7 @@ export function useLogFeed(s: DemoState | undefined) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [run?.n, run?.alice, s?.shield]);
 
-  return { events, totals, heartbeat, head };
+  return { events, heartbeat, head };
 }
 
 /** Operator txs (price moves, resets) for the current run, as ticker lines. */

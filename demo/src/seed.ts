@@ -36,6 +36,7 @@ export async function setPrice(ctx: Context, d: Deployments, price: bigint, labe
 export async function seedRun(ctx: Context, d: Deployments, n = (d.run?.n ?? -1) + 1): Promise<Deployments> {
   const { alice, bob } = runAccounts(n);
   console.log(`Run ${n}: Alice ${alice.address}, Bob ${bob.address}`);
+  if (d.run) await retirePreviousBob(ctx, d, d.run.n);
 
   // Operator: price back to $3000, gas and 20 tWETH for each.
   await setPrice(ctx, d, START_PRICE, "reset price → $3000");
@@ -58,6 +59,21 @@ export async function seedRun(ctx: Context, d: Deployments, n = (d.run?.n ?? -1)
   };
   writeDeployments(next);
   return next;
+}
+
+/**
+ * Unregisters the previous run's Bob, so the keeper's per-block work doesn't grow with every Reset.
+ * Best effort: a failure here never blocks the new run.
+ */
+async function retirePreviousBob(ctx: Context, d: Deployments, prevN: number) {
+  const { bob } = runAccounts(prevN);
+  try {
+    const c = await ctx.client.readContract({ address: d.shield, abi: liquidationShieldAbi, functionName: "getConfig", args: [bob.address] });
+    if (!c.active) return;
+    await confirm(ctx, `unregister run ${prevN} Bob`, ctx.walletFor(bob).writeContract({ address: d.shield, abi: liquidationShieldAbi, functionName: "unregister" }));
+  } catch (e) {
+    console.warn(`could not unregister run ${prevN} Bob:`, (e as Error).message.split("\n")[0]);
+  }
 }
 
 async function openLoan(ctx: Context, d: Deployments, who: Account, name: string) {

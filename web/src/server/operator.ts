@@ -5,7 +5,9 @@ import type { Hex } from "viem";
 import { connect, crash, readDeployments, seedRun, slowCrash, type Context } from "@liquidation-shield/demo";
 import { TESTNET_CHAIN_ID } from "@liquidation-shield/shared";
 
-export type OperatorTx = { kind: "price" | "reset"; label: string; hash: Hex; block: string };
+/** `price`: the tWETH price this tx set; `block` + `index` place it, so the page can value events at the
+ *  price in force at their own position in the block (a crash tick can land in the same block). */
+export type OperatorTx = { kind: "price" | "reset"; label: string; hash: Hex; block: string; index: number; price?: number };
 export type Busy = "reset" | "crash" | null;
 
 type State = { ctx?: Promise<Context>; busy: Busy; error?: string; txs: OperatorTx[] };
@@ -15,11 +17,19 @@ const g = globalThis as { __operator?: State };
 const state: State = (g.__operator ??= { busy: null, txs: [] });
 
 /** Ticker lines: price moves, plus one line per Reset (the price reset that opens it). Setup txs are skipped. */
-function record(tx: { label: string; hash: Hex; block: bigint }) {
-  const price = /^(slow crash|crash)/.test(tx.label);
+function record(tx: { label: string; hash: Hex; block: bigint; index: number }) {
+  const move = /^(slow crash|crash)/.test(tx.label);
   const reset = tx.label.startsWith("reset price");
-  if (!price && !reset) return;
-  state.txs.push({ kind: reset ? "reset" : "price", label: tx.label, hash: tx.hash, block: tx.block.toString() });
+  if (!move && !reset) return;
+  const price = tx.label.match(/→ \$([\d.]+)$/)?.[1];
+  state.txs.push({
+    kind: reset ? "reset" : "price",
+    label: tx.label,
+    hash: tx.hash,
+    block: tx.block.toString(),
+    index: tx.index,
+    price: price ? Number(price) : undefined,
+  });
   if (state.txs.length > 200) state.txs.splice(0, state.txs.length - 200);
 }
 
