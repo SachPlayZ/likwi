@@ -121,7 +121,7 @@ function repayBaseForTarget(uint256 coll, uint256 debt, uint256 ltBps, uint256 t
 
 ### 6.3 Repay sizing (closed form)
 
-From `getUserAccountData` take C = total collateral (base), D = total debt (base), LT = weighted liquidation threshold (bps). Repaying x (base) and selling collateral worth k·x, where k = (10000 + maxSlippageBps + premiumBps + keeperFeeBps) / 10000 (`premiumBps` read from `POOL.FLASHLOAN_PREMIUM_TOTAL()`, never hardcoded), gives:
+From `getUserAccountData` take C = total collateral (base), D = total debt (base), LT = weighted liquidation threshold (bps). Repaying x (base) and selling collateral worth k·x, where k = (10000 + maxSlippageBps)·(10000 + premiumBps + keeperFeeBps) / 10000², rounded up to whole bps (`premiumBps` read from `POOL.FLASHLOAN_PREMIUM_TOTAL()`, never hardcoded). The costs compound, because the swap's slippage applies to repaid + premium + fee. This gives:
 
 ```
 (C·LT/1e4 − x·k·LT/1e4) / (D − x) = target
@@ -318,7 +318,7 @@ Settled on 2026-11-04 by grilling §6–§8 and §13. The sections above already
 
 **Contracts**
 
-1. **k includes fees:** k = 1 + slippage + flash premium + keeper fee. The premium is read from `POOL.FLASHLOAN_PREMIUM_TOTAL()`. If swaps cost less than the cap, HF overshoots target slightly, which is safe. (§6.3)
+1. **k includes fees:** k = (1 + slippage)·(1 + flash premium + keeper fee), compounded. Found in #13: the additive form left a full-slippage Step about 0.005% below target. The premium is read from `POOL.FLASHLOAN_PREMIUM_TOTAL()`. If swaps cost less than the cap, HF overshoots target slightly, which is safe. (§6.3)
 2. **Stale unwinding flag:** if `unwinding && hf ≥ target·0.995`, `protect` clears the flag, emits `UnwindComplete`, and returns without reverting and without a fee. Otherwise a later dip between trigger and target would trigger a step above the user's trigger. (§6.4, test 15)
 3. **`Preview.action`** is an enum `None | Step | ClearUnwind`, replacing `bool protectable`. (§6.2)
 4. **Collateral clamp:** the repay shrinks so `maxCollIn` ≤ min(aToken balance, allowance). If it would be 0, revert `NothingToRepay`. (§6.3, test 16)

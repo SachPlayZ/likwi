@@ -29,7 +29,7 @@ If code and BRIEF disagree, flag it to the user; don't silently pick one.
 
 - **The Shield holds no funds after any call.** Assert it after every Step in tests.
 - Repay debt **before** pulling collateral aTokens (aToken transfers re-check HF).
-- k = 1 + slippage + flash premium + keeper fee. The flash premium is read from the pool (`FLASHLOAN_PREMIUM_TOTAL`), **never hardcoded**.
+- k = (1 + slippage)·(1 + flash premium + keeper fee), rounded up to whole bps. The costs compound, because the swap's slippage applies to repaid + premium + fee. The flash premium is read from the pool (`FLASHLOAN_PREMIUM_TOTAL`), **never hardcoded**.
 - `protect` acts only if `hf < trigger || (unwinding && hf < target·0.995)`. If `unwinding && hf ≥ target·0.995`, it clears the flag (ClearUnwind) and returns without a fee.
 - A Step must strictly raise HF, or revert.
 - Use `SafeERC20.forceApprove`, and reset the adapter approval to 0 after each swap.
