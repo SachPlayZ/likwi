@@ -9,7 +9,7 @@ Built at Monad Blitz (DevCon Mumbai).
 | | |
 |---|---|
 | **Live demo** | **https://liquidation-shield-chi.vercel.app/demo**: Alice (unprotected) vs Bob (shielded); press **Slow crash** |
-| Product page | https://liquidation-shield-chi.vercel.app: connect a wallet, get test tokens, open a loan, activate a Shield |
+| Product page | https://liquidation-shield-chi.vercel.app/app: connect a wallet, get test tokens, open a loan, activate a Shield |
 | Network | **Monad testnet** (chain 10143), explorer https://testnet.monadexplorer.com |
 
 ### Deployed contracts (Monad testnet)
