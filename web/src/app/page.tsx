@@ -1,14 +1,6 @@
-import Link from "next/link";
+import { ProductScreen } from "@/components/ProductScreen";
 
-// The product page (connect wallet, Shield form) is #18. Until then, point at the demo.
+// The product page (BRIEF §8, #18): connect a wallet on Monad testnet and opt in to the Shield.
 export default function Home() {
-  return (
-    <main className="home">
-      <p className="eyebrow">Liquidation Shield · Monad testnet</p>
-      <h1>Per-block liquidation protection for Aave V3 borrowers.</h1>
-      <Link className="btn btn-primary" href="/demo">
-        Open the live demo →
-      </Link>
-    </main>
-  );
+  return <ProductScreen />;
 }

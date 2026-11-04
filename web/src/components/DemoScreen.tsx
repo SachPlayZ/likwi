@@ -1,6 +1,6 @@
 "use client";
 // The hackathon screen (BRIEF §8, §12): Alice (unprotected) vs Bob (shielded), live on Monad testnet.
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useMemo, useState } from "react";
 import { CartesianGrid, Line, LineChart, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { explorerAddressUrl, explorerTxUrl, TESTNET_CHAIN_ID } from "@liquidation-shield/shared";
 import {
@@ -16,6 +16,7 @@ import {
   type TickerEvent,
   type Totals,
 } from "@/lib/feed";
+import { HeartbeatBadge, ShieldIcon } from "@/components/common";
 
 const usd = (n: number, digits = 0) =>
   n.toLocaleString("en-US", { style: "currency", currency: "USD", minimumFractionDigits: digits, maximumFractionDigits: digits });
@@ -325,39 +326,5 @@ function Ticker({ events }: { events: TickerEvent[] }) {
         ))}
       </ol>
     </div>
-  );
-}
-
-function HeartbeatBadge({ heartbeat, head, blockTime }: { heartbeat?: { block: bigint; hash: `0x${string}` }; head?: bigint; blockTime: number }) {
-  // Re-render every 250ms so the age ticks between polls.
-  const [, tick] = useState(0);
-  const timer = useRef<ReturnType<typeof setInterval>>(undefined);
-  useEffect(() => {
-    timer.current = setInterval(() => tick((n) => n + 1), 250);
-    return () => clearInterval(timer.current);
-  }, []);
-
-  if (!heartbeat || head === undefined) {
-    return (
-      <span className="badge warn">
-        <span className="dot" /> Keeper · no heartbeat yet
-      </span>
-    );
-  }
-  const age = Math.max(0, Number(head - heartbeat.block)) * blockTime;
-  const live = age < 15;
-  return (
-    <a className={`badge ${live ? "ok live" : "warn"}`} href={explorerTxUrl(heartbeat.hash)} target="_blank" rel="noreferrer">
-      <span className="dot" /> {live ? "Shield active" : "Keeper quiet"} · heartbeat {age.toFixed(1)}s ago
-    </a>
-  );
-}
-
-function ShieldIcon() {
-  return (
-    <svg width="20" height="22" viewBox="0 0 20 22" fill="none">
-      <path d="M10 1 2 4v6c0 5 3.4 9.4 8 11 4.6-1.6 8-6 8-11V4l-8-3Z" fill="#0b0716" />
-      <path d="m6 11 3 3 5-6" stroke="#b3a6ff" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" />
-    </svg>
   );
 }
