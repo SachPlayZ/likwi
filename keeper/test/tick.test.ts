@@ -229,6 +229,29 @@ describe("tick", () => {
     expect(k.status().users[0].readError).toBeUndefined();
     expect(k.status().users[0].hf).toBe("2");
   });
+
+  it("logs each Step with its explorer link and shows it in status", async () => {
+    const chain = fakeChain();
+    chain.previews.set(BOB, preview(STEP));
+    const lines: Array<{ msg: string; fields?: Record<string, unknown> }> = [];
+    const k = new Keeper({
+      config: baseConfig({ users: [BOB], explorerUrl: "https://explorer.test" }),
+      publicClient: chain.publicClient as never,
+      walletClient: chain.walletClient as never,
+      log: (_level, msg, fields) => lines.push({ msg, fields }),
+    });
+    await k.tick(1n);
+    await k.drain();
+
+    const hash = `0x${"1".padStart(64, "0")}`;
+    const url = `https://explorer.test/tx/${hash}`;
+    const protectLines = lines.filter((l) => l.fields?.functionName === "protect");
+    expect(protectLines.map((l) => [l.msg, l.fields?.url])).toEqual([
+      ["tx sent", url],
+      ["tx confirmed", url],
+    ]);
+    expect(k.status().users[0]).toMatchObject({ lastTx: hash, lastTxUrl: url });
+  });
 });
 
 describe("registry (through tick)", () => {
