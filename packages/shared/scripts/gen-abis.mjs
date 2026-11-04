@@ -22,7 +22,13 @@ const CONTRACTS = [
   { file: "LiquidationShield.sol", name: "LiquidationShield", optional: true, bytecode: true },
   { file: "OracleSwapAdapter.sol", name: "OracleSwapAdapter", optional: true, bytecode: true },
   { file: "UniswapV3SwapAdapter.sol", name: "UniswapV3SwapAdapter", optional: true, bytecode: true },
-  { file: "DemoPriceFeed.sol", name: "DemoPriceFeed", optional: true, bytecode: true, deployedBytecode: true },
+  // TESTNET ONLY (BRIEF §17): the owner-gated test pool. One deploy of TestnetAave builds the full set;
+  // the rest are for the operator routes (set price, mint) and reads.
+  { file: "TestnetAave.sol", name: "TestnetAave", bytecode: true },
+  { file: "TestnetAave.sol", name: "TestnetPool" },
+  { file: "TestnetAave.sol", name: "TestnetOracle" },
+  { file: "TestnetAave.sol", name: "TestnetERC20" },
+  { file: "TestnetAave.sol", name: "TestnetAddressesProvider" },
 ];
 
 const camel = (s) => s[0].toLowerCase() + s.slice(1);

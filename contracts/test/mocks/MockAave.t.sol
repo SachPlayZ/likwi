@@ -5,6 +5,7 @@ import {Test} from "forge-std/Test.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {IPool, IFlashLoanSimpleReceiver, IPoolAddressesProvider} from "../../src/interfaces/IAave.sol";
 import {MockAave, MockERC20, MockPool} from "./MockAave.sol";
+import {TestnetPool} from "../../src/testnet/TestnetAave.sol";
 
 /// @dev Sanity checks for the test double itself, so Shield tests can trust it.
 contract FlashBorrower is IFlashLoanSimpleReceiver {
@@ -111,7 +112,7 @@ contract MockAaveTest is Test {
         vm.startPrank(alice);
         weth.approve(address(pool), 1 ether);
         pool.supply(address(weth), 1 ether, alice, 0);
-        vm.expectRevert(MockPool.CollateralCannotCoverBorrow.selector);
+        vm.expectRevert(TestnetPool.CollateralCannotCoverBorrow.selector);
         pool.borrow(address(usdc), 2_500e6, 2, 0, alice); // LTV 80% of $3000 = $2400
         vm.stopPrank();
     }
@@ -132,7 +133,7 @@ contract MockAaveTest is Test {
     function test_withdrawMaxAndHealthCheck() public {
         _openLoan(alice);
         vm.prank(alice);
-        vm.expectRevert(MockPool.HealthFactorLowerThanLiquidationThreshold.selector);
+        vm.expectRevert(TestnetPool.HealthFactorLowerThanLiquidationThreshold.selector);
         pool.withdraw(address(weth), 10 ether, alice);
 
         vm.prank(alice);
@@ -152,7 +153,7 @@ contract MockAaveTest is Test {
     function test_aTokenTransferRechecksSenderHealth() public {
         _openLoan(alice);
         vm.prank(alice);
-        vm.expectRevert(MockPool.HealthFactorLowerThanLiquidationThreshold.selector);
+        vm.expectRevert(TestnetPool.HealthFactorLowerThanLiquidationThreshold.selector);
         aWeth.transfer(bob, 10 ether);
 
         vm.prank(alice);
@@ -165,7 +166,7 @@ contract MockAaveTest is Test {
     function test_debtTokenIsNotTransferable() public {
         _openLoan(alice);
         vm.prank(alice);
-        vm.expectRevert(MockPool.OperationNotSupported.selector);
+        vm.expectRevert(TestnetPool.OperationNotSupported.selector);
         vUsdc.transfer(bob, 1);
     }
 
@@ -200,7 +201,7 @@ contract MockAaveTest is Test {
         usdc.mint(liquidator, 100_000e6);
         vm.startPrank(liquidator);
         usdc.approve(address(pool), type(uint256).max);
-        vm.expectRevert(MockPool.HealthFactorNotBelowThreshold.selector);
+        vm.expectRevert(TestnetPool.HealthFactorNotBelowThreshold.selector);
         pool.liquidationCall(address(weth), address(usdc), alice, type(uint256).max, false);
         vm.stopPrank();
     }
