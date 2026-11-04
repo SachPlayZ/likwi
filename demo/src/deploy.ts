@@ -79,12 +79,12 @@ export async function deployAll(ctx: Context): Promise<Deployments> {
   await confirm(
     ctx,
     "fund keeper (MON gas)",
-    operator.sendTransaction({ to: keeper, value: parseEther(process.env.KEEPER_GAS_MON ?? "3") }),
+    operator.sendTransaction({ to: keeper, value: parseEther(process.env.KEEPER_GAS_MON ?? "1") }),
   );
   await confirm(
     ctx,
     "fund liquidator (MON gas)",
-    operator.sendTransaction({ to: liquidator, value: parseEther(process.env.LIQUIDATOR_GAS_MON ?? "1") }),
+    operator.sendTransaction({ to: liquidator, value: parseEther(process.env.LIQUIDATOR_GAS_MON ?? "0.3") }),
   );
 
   const d: Deployments = {

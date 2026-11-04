@@ -39,7 +39,7 @@ export async function seedRun(ctx: Context, d: Deployments, n = (d.run?.n ?? -1)
 
   // Operator: price back to $3000, gas and 20 tWETH for each.
   await setPrice(ctx, d, START_PRICE, "reset price → $3000");
-  const gas = parseEther(process.env.DEMO_USER_GAS_MON ?? "0.5");
+  const gas = parseEther(process.env.DEMO_USER_GAS_MON ?? "0.3");
   for (const [name, who] of [["Alice", alice], ["Bob", bob]] as const) {
     await confirm(ctx, `fund ${name} (MON gas)`, ctx.operator.sendTransaction({ to: who.address, value: gas }));
     await confirm(
